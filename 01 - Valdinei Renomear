@@ -1,0 +1,2062 @@
+AddReference "System"
+AddReference "System.Windows.Forms"
+AddReference "System.Drawing"
+Imports System.Drawing
+Imports System.Drawing.Drawing2D
+Imports System.Windows.Forms
+Imports System.IO
+
+
+Sub Main()
+
+    If ThisApplication.ActiveDocument.DocumentType <> _
+        DocumentTypeEnum.kAssemblyDocumentObject Then
+
+        MensagemVisual( _
+            "Abra uma montagem (IAM) antes de executar esta regra.", _
+            "Renomear componente")
+        Exit Sub
+
+    End If
+
+    Dim oMontagem As AssemblyDocument
+    oMontagem = ThisApplication.ActiveDocument
+
+    Dim oContadores(1) As Integer
+    oContadores(0) = 0
+    oContadores(1) = 0
+
+    AguardarSelecao(oMontagem, oContadores)
+
+End Sub
+
+
+' ============================================================
+' PALETA PADRÃO
+' ============================================================
+
+Function CorFundo() As System.Drawing.Color
+    Return System.Drawing.Color.FromArgb(237, 241, 245)
+End Function
+
+Function CorCabecalho() As System.Drawing.Color
+    Return System.Drawing.Color.FromArgb(220, 229, 237)
+End Function
+
+Function CorBotao() As System.Drawing.Color
+    Return System.Drawing.Color.FromArgb(198, 214, 229)
+End Function
+
+Function CorTexto() As System.Drawing.Color
+    Return System.Drawing.Color.FromArgb(55, 68, 82)
+End Function
+
+Function CorTextoSuave() As System.Drawing.Color
+    Return System.Drawing.Color.FromArgb(125, 136, 149)
+End Function
+
+Function CorBorda() As System.Drawing.Color
+    Return System.Drawing.Color.FromArgb(210, 219, 228)
+End Function
+
+Function CorBranco() As System.Drawing.Color
+    Return System.Drawing.Color.FromArgb(255, 255, 255)
+End Function
+
+
+' ============================================================
+' CONFIGURAÇÃO VISUAL COMUM
+' ============================================================
+
+Sub ConfigurarFormulario(ByVal f As System.Windows.Forms.Form)
+
+    f.BackColor = CorFundo()
+    f.ForeColor = CorTexto()
+    f.Font = New System.Drawing.Font("Segoe UI", 9.0!)
+    f.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog
+    f.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
+    f.ShowInTaskbar = False
+    f.MinimizeBox = False
+    f.MaximizeBox = False
+    f.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None
+
+End Sub
+
+
+Sub AdicionarRodape( _
+    ByVal f As System.Windows.Forms.Form, _
+    ByVal posicaoY As Integer, _
+    ByVal largura As Integer)
+
+    Dim linha As New System.Windows.Forms.Panel
+    linha.Left = 18
+    linha.Top = posicaoY
+    linha.Width = largura - 36
+    linha.Height = 1
+    linha.BackColor = CorBorda()
+    f.Controls.Add(linha)
+
+    Dim rotulo As New System.Windows.Forms.Label
+    rotulo.Text = "Desenvolvido por Valdinei R. Machado"
+    rotulo.Left = 18
+    rotulo.Top = posicaoY + 7
+    rotulo.Width = largura - 36
+    rotulo.Height = 19
+    rotulo.TextAlign = System.Drawing.ContentAlignment.MiddleRight
+    rotulo.ForeColor = CorTextoSuave()
+    rotulo.Font = New System.Drawing.Font("Segoe UI", 8.0!)
+    f.Controls.Add(rotulo)
+
+End Sub
+
+
+Function CriarBotao( _
+    ByVal texto As String, _
+    ByVal x As Integer, _
+    ByVal y As Integer, _
+    ByVal largura As Integer) As System.Windows.Forms.Button
+
+    Dim b As New System.Windows.Forms.Button
+
+    b.Text = texto
+    b.SetBounds(x, y, largura, 32)
+    b.BackColor = CorBotao()
+    b.ForeColor = CorTexto()
+    b.FlatStyle = System.Windows.Forms.FlatStyle.Flat
+    b.FlatAppearance.BorderColor = CorBorda()
+    b.FlatAppearance.BorderSize = 1
+    b.Font = New System.Drawing.Font("Segoe UI", 9.0!)
+    b.UseVisualStyleBackColor = False
+
+    Return b
+
+End Function
+
+
+' ============================================================
+' IDENTIDADE VISUAL DOMA
+' UTILIZADA SOMENTE NA CHAMADA E NA CONCLUSÃO
+' ============================================================
+
+Function CriarJanelaDOMA( _
+    ByVal tituloJanela As String, _
+    ByVal textoCentral As String) As System.Windows.Forms.Form
+
+    Dim janela As New System.Windows.Forms.Form
+
+    janela.Text = tituloJanela
+    janela.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
+    janela.ClientSize = New System.Drawing.Size(430, 190)
+    janela.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog
+    janela.MaximizeBox = False
+    janela.MinimizeBox = False
+    janela.ShowInTaskbar = False
+    janela.BackColor = CorFundo()
+    janela.ForeColor = CorTexto()
+    janela.Font = New System.Drawing.Font("Segoe UI", 9.0!)
+    janela.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None
+
+    ' CABEÇALHO
+
+    Dim cabecalho As New System.Windows.Forms.Panel
+    cabecalho.Dock = System.Windows.Forms.DockStyle.Top
+    cabecalho.Height = 32
+    cabecalho.BackColor = CorCabecalho()
+    janela.Controls.Add(cabecalho)
+
+    Dim titulo As New System.Windows.Forms.Label
+    titulo.Text = tituloJanela
+    titulo.Dock = System.Windows.Forms.DockStyle.Fill
+    titulo.TextAlign = System.Drawing.ContentAlignment.MiddleCenter
+    titulo.Font = New System.Drawing.Font( _
+        "Segoe UI", 9.0!, System.Drawing.FontStyle.Bold)
+    titulo.ForeColor = CorTexto()
+    cabecalho.Controls.Add(titulo)
+
+    ' ÁREA CENTRAL
+
+    Dim painelCentral As New System.Windows.Forms.Panel
+    painelCentral.Location = New System.Drawing.Point(0, 32)
+    painelCentral.Size = New System.Drawing.Size(430, 78)
+    painelCentral.BackColor = CorFundo()
+    janela.Controls.Add(painelCentral)
+
+   Dim rotuloCentral As New System.Windows.Forms.Label
+rotuloCentral.Text = textoCentral
+rotuloCentral.Location = New System.Drawing.Point(10, 5)
+rotuloCentral.Size = New System.Drawing.Size(410, 68)
+
+rotuloCentral.Font = New System.Drawing.Font( _
+    "Segoe UI", 10.0!, System.Drawing.FontStyle.Bold)
+
+rotuloCentral.ForeColor = System.Drawing.Color.FromArgb( _
+    55, 68, 82)
+
+rotuloCentral.TextAlign = System.Drawing.ContentAlignment.MiddleCenter
+
+painelCentral.Controls.Add(rotuloCentral)
+
+    ' RODAPÉ
+
+    Dim rodape As New System.Windows.Forms.Panel
+    rodape.Location = New System.Drawing.Point(10, 119)
+    rodape.Size = New System.Drawing.Size(410, 61)
+    rodape.BackColor = CorBranco()
+    rodape.Padding = New System.Windows.Forms.Padding(1)
+
+    ' FORMATO ARREDONDADO
+
+    Dim caminhoRodape As New System.Drawing.Drawing2D.GraphicsPath
+
+    Dim raio As Integer = 6
+    Dim diametro As Integer = raio * 2
+
+    caminhoRodape.AddArc(0, 0, diametro, diametro, 180, 90)
+
+    caminhoRodape.AddArc(rodape.Width - diametro - 1, 0, _
+        diametro, diametro, 270, 90)
+
+    caminhoRodape.AddArc(rodape.Width - diametro - 1, _
+        rodape.Height - diametro - 1, _
+        diametro, diametro, 0, 90)
+
+    caminhoRodape.AddArc(0, rodape.Height - diametro - 1, _
+        diametro, diametro, 90, 90)
+
+    caminhoRodape.CloseFigure()
+
+    rodape.Region = New System.Drawing.Region(caminhoRodape)
+
+    janela.Controls.Add(rodape)
+
+    ' CONTORNO
+
+    AddHandler rodape.Paint, _
+        Sub(sender As Object, e As System.Windows.Forms.PaintEventArgs)
+
+            e.Graphics.SmoothingMode = _
+                System.Drawing.Drawing2D.SmoothingMode.AntiAlias
+
+            Using caneta As New System.Drawing.Pen(CorBorda(), 1)
+
+                e.Graphics.DrawPath(caneta, caminhoRodape)
+
+            End Using
+
+        End Sub
+
+    ' LOGOTIPO DOMA
+
+    Dim imagemLogo As System.Drawing.Image
+    imagemLogo = CarregarLogoDOMA()
+
+    Dim logo As New System.Windows.Forms.PictureBox
+    logo.Location = New System.Drawing.Point(12, 9)
+    logo.Size = New System.Drawing.Size(140, 42)
+    logo.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom
+    logo.Image = imagemLogo
+    logo.BackColor = CorBranco()
+    rodape.Controls.Add(logo)
+
+    ' SEPARADOR VERTICAL
+
+    Dim separador As New System.Windows.Forms.Panel
+    separador.Location = New System.Drawing.Point(168, 13)
+    separador.Size = New System.Drawing.Size(1, 35)
+    separador.BackColor = CorBorda()
+    rodape.Controls.Add(separador)
+
+    ' CRÉDITOS
+
+    Dim credito As New System.Windows.Forms.Label
+    credito.Text = "Desenvolvido por" & vbCrLf & _
+                   "Valdinei R. Machado"
+    credito.Location = New System.Drawing.Point(180, 8)
+    credito.Size = New System.Drawing.Size(215, 43)
+    credito.TextAlign = System.Drawing.ContentAlignment.MiddleCenter
+    credito.ForeColor = CorTexto()
+    credito.Font = New System.Drawing.Font("Segoe UI", 8.0!)
+    rodape.Controls.Add(credito)
+
+    ' LIBERA OS RECURSOS AO FECHAR
+
+    AddHandler janela.FormClosed, _
+        Sub(sender As Object, e As System.Windows.Forms.FormClosedEventArgs)
+
+            Try
+                logo.Image = Nothing
+                imagemLogo.Dispose()
+                caminhoRodape.Dispose()
+            Catch
+            End Try
+
+        End Sub
+
+    Return janela
+
+End Function
+
+
+Function CarregarLogoDOMA() As System.Drawing.Image
+
+    Dim base64Logo As String = _
+    "iVBORw0KGgoAAAANSUhEUgAAAIwAAAAqCAYAAABhhbPNAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAABf7SURBVHhe7Vx3VNTXtuaft95bb7217ooYU2/KNXEATYy5iSXtqTcaNdbYaQPYsGA0gl1ExYqAgCjWCPYee4kdC/YSRY3GgrFGsdOZ761v//gN8ysDM8g/7y6/tc7SYU4/39l7n332GQ+8xL8dkmatRZ/wRAwdMxc9B8QhZf4GfZYKw0P/h5f4/43omIUI6jMZGccysT/jHDIvXodfj/GInb5Cn7VCeEmYfyNcv3EX37YNx6PHz9DBGoXZqZvRMWgMrmXdkb//df+Rvojb8LDlPYLt93UoOrcShZmrJBVlrgIursKNyxex9JeDWL3hANZsPIj1Ww/j1z0ncfz0Zdy6kw2bTV9d5ePGzfvYfzgTG7YdkX5s3H4UB45k4vqNe/qs5eLps1w8evwcj58o6eGjZ8h+9BQPHj7Fg+wnuP/gieSpKLggrCf74VOp9+HjZ5r2+P/8/EJ9MZdwJvMadqT/BmTthe1CyRpd3Q7b4yx7ni07DsPae5L8//tOwxAduxShA+Ngs9mEOBlHMx1qrBg88pe2BmZVBZI8tWnuKzi7MBz/8X4IqnkH41Vvq5K8AvGqxR9vf2xF/WaD0H1AIlKX78LN2w/0dVcYv/9xE+PjV6Bhm2F4qxbbDHBoX/n8Rs0AfNliMIZHpwmBy0NRUTGatB8JS4M+qFGvp6QPP++BDz7rjuqfdcM//snUA199H4GCwiJ98XKxeccxvP/PXnj/0xBU/6y71Mv6P6zbw96epUFfpCzYoi9aLhav3C1jf6Vmb9xaHATMr6KsUaInihLfQsGOoZLvt8xraNl5GPLzC9Cyy3Bs2JqB1l1H4OGjp2jWYQiuXr+tr9pteOTEvwtbrCdyJlfRJCR4wra6LZr5TUZVSyCq1ujqkHxR1eJXspBBQqj3Pu2OQaPmiVisKO799Qg/Rc7DGzWtCkm9AlDV4qtruyRZfOV7yWcJQHD/BFy9fkdfpR0kTO2GYajmHSSEf5X9d0gcj4zJ24r0jHP64uUiKCwe1XxCSuvRJLbnj9d8umFq8hp90TLBjfhmrUAZ63++H4SVM2OA6Z7Im6KsU9HUKsDsqig6NlPyB/SaiAmxi0XaEJu3ZyB0YDz6hE/T1VwxeOQm1UCxCWEKY6oA86pj6qQk/M8HQcYF0yeLnyxe9c96Yu7Cbfp2ysWu9NP4+JswVPMJdk4Sp8lXafvzXtj061F91QIS5vMmAxUSGsqXJhLqp1Fz9MXLBNXPe3XYbz9Dffq642f+oi9eJsbGLFXmpEZXvGIJQo8f44Al9WGLK10zxHsid2ZtwFaE+9lPhDQRkbMxPnYxBo1MQbewGLFrKgOmhCmIqYKi2CrAjL/h5OJI/HeN7rJDlAkpezGZj4vXY2CSiEZXsGbjAVSjqvPSSzJ9KqdtSjyvQKzddFDfhMuEYf9rftkbubn5+iqcYsW6dCGDvi59cpcwnL+Pvu6jzD3rsPjDp/FwPFrdA0gqXa/cEo1QfHWPvezBI5lYuW4fMo6d19T5ojAQJpeiLu5t5CZUB2b9AwUbe6F5QAw+rBuK9+ooIlfEure1TElA8dzOOh555ZBm36GzqOat2EX6OpgUtROkkEHUYKD9sz6v5Lf44/WaVpw6e0XTjnPCcAzacdBO2rH3pKZ8Wejac4oyH471mkgbdwmzbfcJQ73/VT0Em1LGAol/02xyqqn89T31VVQ6DIQhUwtPL4It9yGQmw3kP0JObp5Y/LQxTpz5A6nLdyKwb5yiW/UT5ThBPiHo+VOSvk07eDrx/qK3uWSxUM0EieGbNHcD0jPOinG7c98pTElajbpNfyrZ1UbSsk9fNA9HfkHpicSMMCTgR1/3FYPXkfyst+/gGZq+OgPn5O+1gzQEedXiizoNw+Rg4Ng/dwlj7RdnkFx/qxGEnxesBhbUEi2grhttmbxp78CWU3mHDzMYCUPL+6JrnsGLl28isG+804VTJikYS9fs1RcVRIyepxiK+nIlBnXczF9koc1AlTF8fFoJYY1ts95ZqaUnEnPC+KNph5H4V7vhGgnH//N08+x5+UfshSt2GRaV/Q/sE4u3PtJuBHcIc/feQ7z9sZaIJPUbNQORnZ0LbAqSk5JGyiR7ouhUqr6qSoU5Yc6v1ecrE1FTlhgnzT75AahRr5fB6Lpx674cjc1EN0kwb/F2TX5nGDr2Z9O2SYyPv+mLvDxFJTojzLc/jECvQUmihhzLV/O2YuP2I/rmDPjBGm2QspQsI8anGYjsDmHmpG2VzaYdUyC+7xol3xefXihqSEOYBE/kLmymr6pSUSmEIeiPMVs4mSifYCTN0UotHi/1E6JOarcfEzR5y0JRcTHqNf3JxDZRiLd113ElnxPC/G/rodI3I2HK78eft+6LWtZKAT989u0AzE7dYuiTO4QRqadT1Zyv6XM3yvfFj28gP/Z1OaCoa5c/pQoKYj1hu39BX12lodIIw6Plh3V7mksMr0B81SJCPI4qGrcbZpgQ7kiK3LL8KWagyjMjK/82YMRsyeOMMHWbDhTb6HUf/t1BIlj8xLah7eYMcxZuM5CeJKXdtmHbYYPkcZUwdMApKtJRQtHv5IeLl/+05xNpkmBUSwV7xmjqq0xUGmGIURMXmi6cDNbih8tXb0k+7sw3fNRjusNke1nRPni8vtpyQbc7vavigNPUF4BvWg2x5zMjDI1ekqlFl9EGAnMsvI5wBqoHszLbdp2QKxQ6NfXfuUKYkRM4j0Z15DgWojAjXgjiSBib6pMpLvt0WlFUKmGOnPzdIIbtA/a2YsNWxftIJ51+otUJTZ6niFx30S4w2qBWSCC6/Z8+y5E8ZoShz4Uwkxa0Y/xCY3QtKaAUfM1bJwUsfnj3k2A5ndEXVBHC0Oaq9ZWD78VeNhjRscs0eYvvnkXBVEUVqesnPplETxRf2anJW1moVMLwVME7E/1g1cma+fMmyTd/ya+mkogkIpkqgsFR84118vrA4otrWcp1hTPCFBfbcPtudokRriUAj8z3HzzWNyd2j5FgQQgOi5fvqSYrQpgtO48ZVJna12OnLuly25A7pz4wTaeW6JNZ102Xt3JQqYQhGrWlbWKUMpysSQkrJc/EaSuMi1viQDt34bq+SpcwJWmVeZ0WP3udzgijenVFSpnYHUtWlXpQVXz7g5lRapVbdaKihOFxXD8O9vnTxv1RWGS8FC3YNcqglgrpk4l/G7bnf+mzvzAqnTBmtoA6WdFxyyXPyAlphkkRR52XL65cc8/gVcGFMNRZQhgakYQzwjzPyZPvF600+lRIoA7BEzRt0fB81UurjlgXpavqu6kIYe7Q9/IRPehaW4zlKEHNUJy1XySMeOh1xm/hiXn67C+MSicMj6nOJMzkxFWSx9w4VtTHpSuKYewuxscvN62TRFRPFuURhqrnndq6S0SLH96qFYhbd0o9qGYuAbYdNjTFnqcihKGjUV+v9NMrELv3n9FnF9gKc5Gb7KO5jJR1pE8mrYk++wujUgnz+EkOqoub3Xi05mTNKokFcaY+uIBHTlzUV+sS+g2daazT4iuLzZ1LlEcYwkwlcBFVRyJdA1+3HGyQovy858Bv9noqQphGbbjZdPVa/OFVvxdyHPqoR8GmPgYnnuKTqQLbPfdDNcpCpRKGMaRm0kUG7m2VICNi8ardhkVRJ3TRyt36al1CY7GdjJNNb6+q+10hzPotGYa+8fTVJmCcfH/2/HWDj4Tq6ZOG/TR3V+4S5vS5K4Z61TKh4dP12TWQqxzdNYGqlgp2R+qzvxDMCZPpXpCPikGj5homW0m+cgRVwyqP8vhtOjlW+ynDHTBoiw4/fX1caLruCfoMXSEMQzR5j8RQAntdFj9x9zMSz0xt8DOvAhzhLmGGj0811KuUsWLdlgx9dg1sOdnInfauXEA6EoZqKje5FlDkeqhGeTASJomEWa3PVy4YGfZeHXN1xJ1PV7cKLpClvsnx2+KHdz4Jwd2/FBXiKsbFLjUlKhcgboYiLZ15evWEIfoNMao3joHqsk/EDMNJinXqj7zuEIa+F/bDbD4YmEUvennIW9XFIGVUn0zRZfcD2pzBIzfxQ3uIZjGDpqZ5ovhuqS52FTxJ6CfSPlE+wZi/RHuZGDpoumFR1ElV3fmuIOvmPSdEVU5IjA8m3CHM7v1GxyLHFjlpkeI2cLzZ9grAF80HGQLi3SEMowQpSbT9V9pkrI0rKDy1wGDHqAIgf61Vn73C8MiJfRNIripMtCVUQ376ZH2eMlFcXIx+Q1JMF1+d0E8ahhki2DKOXShZFH1oAu9MArHil3RNfjPwCNu0Y6QpUdmfjiET7XndIQwj3Wj7aHa8xRc16vYwCVkItp/+HOEOYfxDY0wJw/wMn3AFfD2QH/ua5jKSiT6Z/Pi3YHtmfGWxZedxxCSvRfL8TfLawQw05B0dlx64sR+4nQ7cPQA8d89pdvDoebToEuWULFx8frd5h3mcbTtrtHnZksDpxNkbnIZ5Hjt1GY3bjjAli0K6AM1rAncIQwwdt8BoUxhCVNmOPy5cKr0QVOEqYehhNvO9kKBv1gyUezdXkZvW1HAZKVKGPpnj2jjl0ZMXoXP3yUietwlDx6YaIhQJBodx8zpuCHnIdv9+Hu7dy8HNm4/xx7U7+OPabUOiQ+387zfkYm1Swio07zxaJlwvujUT5BMiE+8MnOjXfZyEZ5aEgtb7bhAiJy3GynX7RXTzrqlTN75kUMI1DeWctOsuYY6ccH4vZi/vFYgm7UfoiwpcJczMnzcbiVlStxr74ioKD8YZvL5CGPpkUhvb8xUUFIoEffL0uaa8HtNmrZOwlc7dJ9lPgB68in/dxype1vKSqi44cHN1oiZfWTQ2Vh4WLN1RMmHmdXHRpL2SN0lK2+ZRdkysi2R2POIS7hKG90v1mmrz6xPbmjFfuR/Tw1XCNDTxvah162OIygNtz8JYT81lJBM/8+/FdxXnH31JYcNS0CFkkv2eTQ/maek7BvfuP0Jw/2n2YDIP3q7KpPDSrbzkZJEcE+vi4jJ80lVMTlwpE2QqaVxOCklp0zx4aNTH7hKGmCB3XsbdL0nCJQOQddP8vsYVwpz87Q/DFYM6Fn3siyuw2YqRO6euPDsxSBn6ZHZppeGU6WvQoPlgxEw3ulEYnN+lh2LP8tVrUL84+b+HV4NeL7hQSmIdPA3VaTwA67eW7TcwAyXNO590K1PaOEvyGtLbir6DU/A8xzwOtyKEoQo22i0lZb2tclnpDK4QZoiElxoJSYnzTavBmvpcRcHuKGCGJ57rCFNMn8x0H6BQO1ZeefA6Rx8SOyhyLuo2DRfPN22dDz7vIU+LPUz9IU5TiZSRsAHFflHVRe2G/TElaY0hdtcdcEd1H5CEat4lLxrlWa66YOqilb66VPM06xwlFn9ZIGEYOqknjM8XoU4JQ5iFSjKx7bK80s4Io/qFcnLzIZvVROVV8+kmd2MVge3hVeTHVhW7ha8jeSnJxP/ziF18SVGhjm/IGUXQJyLZ/plRhl+1HIzT567i0pWbuHLtNqx948Sm8Xi3TnCJXcBHYOUkEsviJ9Z7zS/7oJXvWIkO27rrhEsR9q7i/KUbmJq8Fq39x8GrQSiqeZU8Ny1Rnf/4Z3c0bjcCI8YvlIf6roCEYWASpaA6Ho6bYZhlEYZG9ms1u2vnwduKN2sGlPlrCAt5860rx3r4RIZY/ku6EMMwx15W1Pq6H67/aTwGu4rCsytgm+Mtnl6qJ3uaVRVFK9uLfdK1ZwxCw2dg4Mi5+K5jpERDbtt1XCQLH+YF9dN63A8czkSzTqPgcfj4RXlLXF5iAeY9c+4qsv68V+YkVyaePM3B5au35Trh0NELyLyYJb+y4C44SUdPXkJ6RqZmXPTeOnvKQnAj6Mvw82mTY6gj6K3ed0g3j4fO4UaJzcNb+QOHz8u8qmn/4XPIOHbR1AZzF7a8x8DdU7BlHUDx9XRJyEpH8Y2Dck9y6242tu0+KUmVNjxGU8qz71Q/ejDK8OXvw7yEW3hJmJdwCx5bdx7H3oNnJZaU4p4xtRu2HRV3sAQzbz4sYpsnBrr3aRCpxz0evTb9qoQs0GP5x9XS3x+h2lq98RD+uq+4lakSNu84LiEO/L0SNWyS9Tp6GamC2B/24ez5a6KK1MvIg0fO2wOZeJz9dS/7ekTUIy/o2J4q8tU66XCkr4F3SvSabt9zWlQrwT5TFaj18bqC4CM7eol5obpjn9IG+6mOm/9yTrbvPold6Wfk+TCxbsthe92cK46BT3vp0yHOXcySvqivJzjfbGPnvjPYuU+JZeaPEantUP2zLFXx2k2H5O9cJ87P7vTTModbdp6w35ed+k0ZM9tQ44r4HeeG87JqwyGxD18EHgz9e/eTEIm5+HH4LHzZIgIjJiwSfdrKbwx8Q+Pl8RSflPYfNgs79p6Sd8c8ITRqOwIdu02RCDrmUS8NORF1mwxEaESKPI3gr1XxUVg760SJ5+VDdxpQBC/zvBuE2l8osn6fL/ti1MQlWLZmrzxHGRadKsSj0ag+f+WRtEn7SPlBob0Hf5MXjGyP/T909Dz+9YNyOz5w5Bzx+jJsgv1s1nkMWvtHi9E5NmaJnIC4SAmz14sRTJslpP80iW8ZM2UJGrUbKaELbPfvtUNkMXhiYAT/t+1HoXbDH5G6bIe8RQroE4+vWw4RvwU/B/ZNkPGyTm6YVn5jxbfDy1KS1bdXDMbFLkPdpoPgFxon87d41R6ElDyga9k1CtFxy9CgeTjGTV0qPyzkHzpVyvNza/+x6DZgOlp0Ho1la/ehWScl9sW/91S85u0nG55ryktTBn2NnrJcYpFeBKKSmnUchbz8fKQu24kmHaIwd+FWsZQdQxJ4Hucpg4OKiJqH5p0j7bGyJEX46HlyYiI4wSp5WC5s6EwZDKXO+q1HsH33CXTqNkl2LReSZOI7HoI78rNvByJm+moxDOkJ5VPWuYu2ydsj/ittTEhDW+skLFm9R04y6q0u2+0dnoyO3ZSLx2HjFki/uIAjx6dhxISFiIiaL+0yL8Mq05bvlGSp30sWnwtJd3jUlMVo6ReNn5f+KiSsUb+3bJb2QePFQOQFKcdKacILVoLj4EZj2TYBE+xReAziah88QY7VH9YLldMI+8TyJDLBsQ4Z87P992kYtMXxft1qKGanKeOmpCBBCL9eMZi/eIc8hWEUIx1tlKh0snEOKI1IltjkNeIzihiTapfAFYUQ5puWg3HnXra4uVv5Rcv7IV4Y1mkUhrt/PRKRz86w82Qudy1vgrlLKV7p+OGgKYH4BoiLzUnlAzPufDqrKEmowup9Fy55OVlc6E8bD0SD5kPsQc5Ukbw/Yt1USSTWj8NnS3lr31jEpyiOL5LWv3e8HAW52I3bDZedzEmkD4Pt8tchVMnCX4gaPXkx6n4XIZNIKeDVoLdInIDesbKQJOaXLcJlfPz/0LEL0LlHjNxh0RnZfUCCSB1KIhKG80HCccx0ADIUNHHOehk752zNpkPiEuA4CLoJSBBKR8bcfPB5d5EUrINqkG3zoo9zTdXPlwJUo1Sv9ZtFyHdUYQ1bKz9RRmnTuF0kPm8yQDYXScFNX/OrfiIZOY7wyHmYlbZF1HpE1ALxRb0IhDABvaeKzUI92bRjFKxhiaIDZeLbR2Hs1KWyG8ledpoLQP1KN3yTDpEymVzoRm1HoUPwRHF59xo0HS39xsvEUA/zko27tY3/WCxZvVd2Eomwcv0BUUMU88Sxk7+jYZvhCApLFEJxgpeu3iuBSykLNtslTMLsdfi+azQC+06TvvCXIBq2HSWiNycnX1RB8y7jRNLwCMxdOzlhpb08F5bjYsgliUC1R2cb1RGlq6JmN6B517HSt4RZ64QsPII2ajNcCLNq/X6RJAQ323edouQei5eqVHHWsCRZVIYOUCX1GTwD01J+kURbjHc1DF/41w+j7JKMNhw3Y4uu0XJlwrBX39A4tAmIlv+TQOpccU1OnLksY2dZEpGSflbqVrHBuAYc1+y0reg/LAVdesbKvLwIhDCqH4KDoi3BTqt/o8HEAGTHACE1RpY6knn1ZVXoz/KUOGpcDMMdHUMXHC8L+UuTrIf1qQYjwTbUz/x/rq69cxey8F2n0bKQhGP77DPLquUdf82SY9WHUfBv0kZuvrTB/jr6a9S+OP6NQfDqZ7b3IFsbKcfvpExxaRl+zs3Lt9twKhz7Tkmp9s+xTce26Tnmd47jYh/UeeX3rkTulYf/A4/9diqlC4p/AAAAAElFTkSuQmCC"
+
+    Dim dadosLogo As Byte() = _
+        System.Convert.FromBase64String(base64Logo)
+
+    Using fluxo As New System.IO.MemoryStream(dadosLogo)
+
+        Using imagemOriginal As System.Drawing.Image = _
+            System.Drawing.Image.FromStream(fluxo)
+
+            Return New System.Drawing.Bitmap(imagemOriginal)
+
+        End Using
+
+    End Using
+
+End Function
+
+
+' ============================================================
+' JANELA PADRÃO DE MENSAGENS E CONFIRMAÇÕES
+' MANTIDA SEM ALTERAÇÕES
+' ============================================================
+
+Function MensagemVisual( _
+    ByVal texto As String, _
+    ByVal titulo As String, _
+    Optional ByVal botoes As System.Windows.Forms.MessageBoxButtons = System.Windows.Forms.MessageBoxButtons.OK, _
+    Optional ByVal icone As System.Windows.Forms.MessageBoxIcon = System.Windows.Forms.MessageBoxIcon.None) _
+    As System.Windows.Forms.DialogResult
+
+    Dim f As New System.Windows.Forms.Form
+    ConfigurarFormulario(f)
+
+    f.Text = titulo
+    f.ClientSize = New System.Drawing.Size(520, 200)
+
+    Dim faixa As New System.Windows.Forms.Panel
+    faixa.SetBounds(0, 0, 520, 6)
+    faixa.BackColor = CorCabecalho()
+    f.Controls.Add(faixa)
+
+    Dim rotulo As New System.Windows.Forms.Label
+    rotulo.Text = texto
+    rotulo.SetBounds(24, 23, 472, 92)
+    rotulo.ForeColor = CorTexto()
+    rotulo.BackColor = CorFundo()
+    rotulo.Font = New System.Drawing.Font("Segoe UI", 9.0!)
+    rotulo.TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+    rotulo.AutoEllipsis = False
+    f.Controls.Add(rotulo)
+
+    Dim yBotoes As Integer = 130
+    Dim larguraBotao As Integer = 104
+    Dim espaco As Integer = 10
+    Dim totalBotoes As Integer
+    Dim xInicial As Integer
+
+    If botoes = System.Windows.Forms.MessageBoxButtons.YesNo OrElse _
+       botoes = System.Windows.Forms.MessageBoxButtons.YesNoCancel Then
+        totalBotoes = If( _
+            botoes = System.Windows.Forms.MessageBoxButtons.YesNo, 2, 3)
+    ElseIf botoes = System.Windows.Forms.MessageBoxButtons.OKCancel Then
+        totalBotoes = 2
+    Else
+        totalBotoes = 1
+    End If
+
+    xInicial = (520 - _
+        (totalBotoes * larguraBotao + _
+        (totalBotoes - 1) * espaco)) \ 2
+
+    Dim b1 As System.Windows.Forms.Button
+    Dim b2 As System.Windows.Forms.Button
+    Dim b3 As System.Windows.Forms.Button
+
+    If botoes = System.Windows.Forms.MessageBoxButtons.YesNo Then
+
+        b1 = CriarBotao("Sim", xInicial, yBotoes, larguraBotao)
+        b2 = CriarBotao("Não", xInicial + larguraBotao + espaco, yBotoes, larguraBotao)
+
+        b1.DialogResult = System.Windows.Forms.DialogResult.Yes
+        b2.DialogResult = System.Windows.Forms.DialogResult.No
+
+        f.Controls.Add(b1)
+        f.Controls.Add(b2)
+        f.AcceptButton = b1
+        f.CancelButton = b2
+
+    ElseIf botoes = System.Windows.Forms.MessageBoxButtons.YesNoCancel Then
+
+        b1 = CriarBotao("Sim", xInicial, yBotoes, larguraBotao)
+        b2 = CriarBotao("Não", xInicial + larguraBotao + espaco, yBotoes, larguraBotao)
+        b3 = CriarBotao("Cancelar", xInicial + 2 * (larguraBotao + espaco), yBotoes, larguraBotao)
+
+        b1.DialogResult = System.Windows.Forms.DialogResult.Yes
+        b2.DialogResult = System.Windows.Forms.DialogResult.No
+        b3.DialogResult = System.Windows.Forms.DialogResult.Cancel
+
+        f.Controls.Add(b1)
+        f.Controls.Add(b2)
+        f.Controls.Add(b3)
+        f.AcceptButton = b1
+        f.CancelButton = b3
+
+    ElseIf botoes = System.Windows.Forms.MessageBoxButtons.OKCancel Then
+
+        b1 = CriarBotao("OK", xInicial, yBotoes, larguraBotao)
+        b2 = CriarBotao("Cancelar", xInicial + larguraBotao + espaco, yBotoes, larguraBotao)
+
+        b1.DialogResult = System.Windows.Forms.DialogResult.OK
+        b2.DialogResult = System.Windows.Forms.DialogResult.Cancel
+
+        f.Controls.Add(b1)
+        f.Controls.Add(b2)
+        f.AcceptButton = b1
+        f.CancelButton = b2
+
+    Else
+
+        b1 = CriarBotao("OK", xInicial, yBotoes, larguraBotao)
+        b1.DialogResult = System.Windows.Forms.DialogResult.OK
+
+        f.Controls.Add(b1)
+        f.AcceptButton = b1
+        f.CancelButton = b1
+
+    End If
+
+    AdicionarRodape(f, 173, 520)
+
+    Dim resultado As System.Windows.Forms.DialogResult
+    resultado = f.ShowDialog()
+
+    f.Dispose()
+
+    Return resultado
+
+End Function
+
+
+' ============================================================
+' JANELA PADRÃO PARA DIGITAR O NOVO NOME
+' MANTIDA SEM ALTERAÇÕES
+' ============================================================
+
+Function EntradaVisual( _
+    ByVal mensagem As String, _
+    ByVal titulo As String, _
+    ByVal valorInicial As String) As String
+
+    Dim f As New System.Windows.Forms.Form
+    ConfigurarFormulario(f)
+
+    f.Text = titulo
+    f.ClientSize = New System.Drawing.Size(520, 218)
+
+    Dim faixa As New System.Windows.Forms.Panel
+    faixa.SetBounds(0, 0, 520, 6)
+    faixa.BackColor = CorCabecalho()
+    f.Controls.Add(faixa)
+
+    Dim rotulo As New System.Windows.Forms.Label
+    rotulo.Text = mensagem
+    rotulo.SetBounds(24, 22, 472, 55)
+    rotulo.ForeColor = CorTexto()
+    rotulo.Font = New System.Drawing.Font("Segoe UI", 9.0!)
+    f.Controls.Add(rotulo)
+
+    Dim campo As New System.Windows.Forms.TextBox
+    campo.SetBounds(24, 84, 472, 29)
+    campo.Text = valorInicial
+    campo.Font = New System.Drawing.Font("Segoe UI", 10.0!)
+    campo.BackColor = CorBranco()
+    campo.ForeColor = CorTexto()
+    campo.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle
+    f.Controls.Add(campo)
+
+    Dim bConfirmar As System.Windows.Forms.Button
+    Dim bCancelar As System.Windows.Forms.Button
+
+    bConfirmar = CriarBotao("Confirmar", 276, 132, 104)
+    bCancelar = CriarBotao("Cancelar", 392, 132, 104)
+
+    bConfirmar.DialogResult = System.Windows.Forms.DialogResult.OK
+    bCancelar.DialogResult = System.Windows.Forms.DialogResult.Cancel
+
+    f.Controls.Add(bConfirmar)
+    f.Controls.Add(bCancelar)
+
+    AdicionarRodape(f, 174, 520)
+
+    f.AcceptButton = bConfirmar
+    f.CancelButton = bCancelar
+
+    campo.Select()
+    campo.SelectAll()
+
+    Dim resultado As System.Windows.Forms.DialogResult
+    resultado = f.ShowDialog()
+
+    Dim retorno As String = ""
+
+    If resultado = System.Windows.Forms.DialogResult.OK Then
+        retorno = campo.Text
+    End If
+
+    f.Dispose()
+
+    Return retorno
+
+End Function
+
+
+' ============================================================
+' JANELA DE SELEÇÃO DO COMPONENTE
+' IDENTIDADE VISUAL DOMA
+' ============================================================
+
+Sub AguardarSelecao( _
+    ByVal oMontagem As AssemblyDocument, _
+    ByVal oContadores() As Integer)
+
+    Try
+        oMontagem.SelectSet.Clear()
+    Catch
+    End Try
+
+    Dim oFormulario As System.Windows.Forms.Form
+
+    oFormulario = CriarJanelaDOMA( _
+        "Renomear componente", _
+        "Selecione uma peça ou submontagem na árvore." & vbCrLf & _
+        "Pressione Esc quando terminar.")
+
+    oFormulario.TopMost = True
+    oFormulario.KeyPreview = True
+
+    Dim oTemporizador As New System.Windows.Forms.Timer
+    oTemporizador.Interval = 300
+
+    Dim oSelecaoFeita As Boolean = False
+    Dim oProcessando As Boolean = False
+
+    AddHandler oFormulario.KeyDown, _
+    Sub(sender As Object, E As System.Windows.Forms.KeyEventArgs)
+
+        If E.KeyCode = System.Windows.Forms.Keys.Escape Then
+
+            E.Handled = True
+
+            oFormulario.TopMost = False
+            oFormulario.Close()
+
+        End If
+
+    End Sub
+
+    AddHandler oTemporizador.Tick, _
+        Sub(sender As Object, e As System.EventArgs)
+
+            Try
+                If oMontagem.SelectSet.Count > 0 AndAlso Not oProcessando Then
+
+                    Dim oItem As Object
+                    oItem = oMontagem.SelectSet.Item(1)
+
+                    If TypeOf oItem Is ComponentOccurrence Then
+
+                        Dim oOcorrencia As ComponentOccurrence
+                        oOcorrencia = DirectCast(oItem, ComponentOccurrence)
+
+                        oProcessando = True
+                        oSelecaoFeita = True
+
+                        oTemporizador.Stop()
+                        oFormulario.Hide()
+
+                        Dim oResultado As Integer
+                        oResultado = ProcessarRenomeacao(oMontagem, oOcorrencia)
+
+                        If oResultado = 1 Then
+                            oContadores(0) += 1
+                        ElseIf oResultado = -1 Then
+                            oContadores(1) += 1
+                        End If
+
+                        oFormulario.Dispose()
+                        oTemporizador.Dispose()
+
+                        AguardarSelecao(oMontagem, oContadores)
+
+                    End If
+                End If
+
+            Catch ex As Exception
+
+                Try
+                    oTemporizador.Stop()
+                    oFormulario.Close()
+                    oFormulario.Dispose()
+                    oTemporizador.Dispose()
+                Catch
+                End Try
+
+                MensagemVisual( _
+                    "Não foi possível continuar:" & vbCrLf & ex.Message, _
+                    "Renomear componente")
+
+                oContadores(1) += 1
+                AguardarSelecao(oMontagem, oContadores)
+
+            End Try
+        End Sub
+
+
+    AddHandler oFormulario.FormClosed, _
+        Sub(sender As Object, E As System.Windows.Forms.FormClosedEventArgs)
+
+            Try
+                oTemporizador.Stop()
+                oTemporizador.Dispose()
+            Catch
+            End Try
+
+            If Not oSelecaoFeita Then
+
+                oFormulario.TopMost = False
+
+                ' JANELA FINAL DE CONCLUSÃO COM IDENTIDADE DOMA
+
+                Dim textoConclusao As String
+
+                textoConclusao = _
+                    "Processo de renomeação encerrado." & _
+                    vbCrLf & vbCrLf & _
+                    "Renomeações concluídas: " & _
+                    oContadores(0).ToString() & vbCrLf & _
+                    "Operações com falha: " & _
+                    oContadores(1).ToString() & vbCrLf & vbCrLf & _
+                    "Salve os documentos quando terminar."
+
+                Dim janelaConclusao As System.Windows.Forms.Form
+
+janelaConclusao = CriarJanelaDOMA( _
+    "Renomear componente", textoConclusao)
+
+For Each controle As System.Windows.Forms.Control In janelaConclusao.Controls
+
+    If TypeOf controle Is System.Windows.Forms.Panel Then
+
+        ' ÁREA CENTRAL
+        If controle.Location.Y = 32 Then
+
+            controle.Height = 121
+
+            For Each item As System.Windows.Forms.Control In controle.Controls
+
+                If TypeOf item Is System.Windows.Forms.Label Then
+
+                    item.Location = New System.Drawing.Point(10, 12)
+                    item.Size = New System.Drawing.Size(410, 90)
+
+                End If
+
+            Next
+
+        End If
+
+        ' RODAPÉ DOMA
+        If controle.Location.Y = 119 Then
+
+            controle.Location = New System.Drawing.Point(10, 153)
+
+        End If
+
+    End If
+
+Next
+
+janelaConclusao.ClientSize = New System.Drawing.Size(430, 234)
+
+
+janelaConclusao.KeyPreview = True
+
+AddHandler janelaConclusao.KeyDown, Sub(objetoEvento, teclaEvento)
+
+    If teclaEvento.KeyCode = System.Windows.Forms.Keys.Enter Then
+
+        teclaEvento.Handled = True
+        teclaEvento.SuppressKeyPress = True
+
+        janelaConclusao.Close()
+
+    End If
+
+End Sub
+
+janelaConclusao.ShowDialog()
+janelaConclusao.Dispose()
+
+            End If
+
+        End Sub
+
+
+    oFormulario.Show()
+    oTemporizador.Start()
+
+End Sub
+
+
+' ============================================================
+' JANELA DE PROGRESSO DOMA
+' ============================================================
+
+Function CriarJanelaProgressoDOMA() As System.Windows.Forms.Form
+
+    Dim f As New System.Windows.Forms.Form
+    f.Text = "Renomear componente"
+    f.ClientSize = New System.Drawing.Size(500, 225)
+    f.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
+    f.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog
+    f.MaximizeBox = False
+    f.MinimizeBox = False
+    f.ShowInTaskbar = False
+    f.TopMost = True
+    f.BackColor = CorFundo()
+    f.ForeColor = CorTexto()
+    f.Font = New System.Drawing.Font("Segoe UI", 9.0!)
+    f.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None
+
+    Dim cabecalho As New System.Windows.Forms.Panel
+    cabecalho.Location = New System.Drawing.Point(0, 0)
+    cabecalho.Size = New System.Drawing.Size(500, 48)
+    cabecalho.BackColor = CorCabecalho()
+    f.Controls.Add(cabecalho)
+
+    Dim titulo As New System.Windows.Forms.Label
+    titulo.Text = "Processamento de desenhos"
+    titulo.Location = New System.Drawing.Point(18, 7)
+    titulo.Size = New System.Drawing.Size(460, 22)
+    titulo.Font = New System.Drawing.Font("Segoe UI", 11.0!, System.Drawing.FontStyle.Bold)
+    titulo.ForeColor = CorTexto()
+    cabecalho.Controls.Add(titulo)
+
+    Dim subtitulo As New System.Windows.Forms.Label
+    subtitulo.Text = "Acompanhamento das etapas de execução"
+    subtitulo.Location = New System.Drawing.Point(19, 29)
+    subtitulo.Size = New System.Drawing.Size(460, 16)
+    subtitulo.Font = New System.Drawing.Font("Segoe UI", 8.0!)
+    subtitulo.ForeColor = CorTextoSuave()
+    cabecalho.Controls.Add(subtitulo)
+
+    Dim etapa As New System.Windows.Forms.Label
+    etapa.Name = "etapaProgressoDOMA"
+    etapa.Text = "Preparando processamento..."
+    etapa.Location = New System.Drawing.Point(20, 62)
+    etapa.Size = New System.Drawing.Size(390, 22)
+    etapa.Font = New System.Drawing.Font("Segoe UI", 9.0!, System.Drawing.FontStyle.Bold)
+    etapa.ForeColor = CorTexto()
+    f.Controls.Add(etapa)
+
+    Dim percentual As New System.Windows.Forms.Label
+    percentual.Name = "percentualProgressoDOMA"
+    percentual.Text = "0%"
+    percentual.Location = New System.Drawing.Point(420, 62)
+    percentual.Size = New System.Drawing.Size(55, 22)
+    percentual.TextAlign = System.Drawing.ContentAlignment.MiddleRight
+    percentual.Font = New System.Drawing.Font("Segoe UI", 9.0!, System.Drawing.FontStyle.Bold)
+    percentual.ForeColor = CorTexto()
+    f.Controls.Add(percentual)
+
+    Dim barra As New System.Windows.Forms.ProgressBar
+    barra.Name = "barraProgressoDOMA"
+    barra.Location = New System.Drawing.Point(20, 91)
+    barra.Size = New System.Drawing.Size(455, 17)
+    barra.Minimum = 0
+    barra.Maximum = 100
+    barra.Value = 0
+    barra.Style = System.Windows.Forms.ProgressBarStyle.Continuous
+    f.Controls.Add(barra)
+
+    Dim arquivo As New System.Windows.Forms.Label
+    arquivo.Name = "arquivoProgressoDOMA"
+    arquivo.Text = "Aguardando início..."
+    arquivo.Location = New System.Drawing.Point(20, 119)
+    arquivo.Size = New System.Drawing.Size(455, 20)
+    arquivo.Font = New System.Drawing.Font("Segoe UI", 8.0!)
+    arquivo.ForeColor = CorTextoSuave()
+    arquivo.AutoEllipsis = True
+    f.Controls.Add(arquivo)
+
+    Dim contador As New System.Windows.Forms.Label
+    contador.Name = "contadorProgressoDOMA"
+    contador.Text = "Arquivos processados: aguardando"
+    contador.Location = New System.Drawing.Point(20, 146)
+    contador.Size = New System.Drawing.Size(455, 20)
+    contador.Font = New System.Drawing.Font("Segoe UI", 8.0!)
+    contador.ForeColor = CorTexto()
+    f.Controls.Add(contador)
+
+    Dim rodape As New System.Windows.Forms.Label
+    rodape.Text = "Desenvolvido por Valdinei R. Machado"
+    rodape.Location = New System.Drawing.Point(20, 177)
+    rodape.Size = New System.Drawing.Size(455, 18)
+    rodape.Font = New System.Drawing.Font("Segoe UI", 7.0!)
+    rodape.ForeColor = CorTextoSuave()
+    rodape.TextAlign = System.Drawing.ContentAlignment.MiddleRight
+    f.Controls.Add(rodape)
+
+    f.Show()
+    System.Windows.Forms.Application.DoEvents()
+
+    Return f
+
+End Function
+
+
+Sub AtualizarProgressoDOMA( _
+    ByVal f As System.Windows.Forms.Form, _
+    ByVal valor As Integer, _
+    ByVal textoEtapa As String, _
+    ByVal textoArquivo As String, _
+    ByVal textoContador As String)
+
+    If f Is Nothing OrElse f.IsDisposed Then Return
+
+    Dim percentual As Integer = System.Math.Max(0, System.Math.Min(100, valor))
+
+    DirectCast(f.Controls("barraProgressoDOMA"), _
+        System.Windows.Forms.ProgressBar).Value = percentual
+
+    DirectCast(f.Controls("percentualProgressoDOMA"), _
+        System.Windows.Forms.Label).Text = percentual.ToString() & "%"
+
+    DirectCast(f.Controls("etapaProgressoDOMA"), _
+        System.Windows.Forms.Label).Text = textoEtapa
+
+    DirectCast(f.Controls("arquivoProgressoDOMA"), _
+        System.Windows.Forms.Label).Text = textoArquivo
+
+    DirectCast(f.Controls("contadorProgressoDOMA"), _
+        System.Windows.Forms.Label).Text = textoContador
+
+    System.Windows.Forms.Application.DoEvents()
+
+End Sub
+
+
+Sub FecharProgressoDOMA(ByRef f As System.Windows.Forms.Form)
+
+    If f Is Nothing Then Return
+
+    Try
+        f.TopMost = False
+        f.Close()
+        f.Dispose()
+    Catch
+    End Try
+
+    f = Nothing
+
+End Sub
+
+
+Sub LerLogProgressoDOMA( _
+    ByVal caminhoLog As String, _
+    ByVal f As System.Windows.Forms.Form, _
+    ByRef indiceLinha As Integer, _
+    ByRef processados As Integer, _
+    ByRef total As Integer)
+
+    If Not System.IO.File.Exists(caminhoLog) Then Return
+
+    Try
+
+        Dim linhasLog() As String
+        linhasLog = System.IO.File.ReadAllLines(caminhoLog)
+
+        While indiceLinha < linhasLog.Length
+
+            Dim linhaAtual As String = linhasLog(indiceLinha)
+            Dim campos() As String = linhaAtual.Split("|"c)
+
+            If campos.Length >= 2 Then
+
+                If campos(0) = "APPRENTICE" Then
+
+                    AtualizarProgressoDOMA( _
+                        f, 55, _
+                        "Apprentice iniciado.", _
+                        "Mecanismo de processamento de desenhos inicializado.", _
+                        "IDWs na fila: " & total.ToString())
+
+                ElseIf campos(0) = "ATUAL" Then
+
+                    Dim nomeAtual As String = campos(1)
+
+                    Try
+                        nomeAtual = System.IO.Path.GetFileName(nomeAtual)
+                    Catch
+                    End Try
+
+                    Dim percentualAtual As Integer = 55
+
+                    If total > 0 Then
+                        percentualAtual = 55 + CInt((processados / CDbl(total)) * 35)
+                    End If
+
+                    AtualizarProgressoDOMA( _
+                        f, percentualAtual, _
+                        "Processando referências dos desenhos...", _
+                        "Em processamento: " & nomeAtual, _
+                        "Arquivos processados: " & processados.ToString() & _
+                        " de " & total.ToString())
+
+                ElseIf campos(0) = "PROGRESS" AndAlso campos.Length >= 4 Then
+
+                    Dim valorProcessados As Integer
+                    Dim valorTotal As Integer
+
+                    If Integer.TryParse(campos(1), valorProcessados) Then
+                        processados = valorProcessados
+                    End If
+
+                    If Integer.TryParse(campos(2), valorTotal) Then
+                        total = valorTotal
+                    End If
+
+                    Dim nomeConcluido As String = campos(3)
+
+                    Try
+                        nomeConcluido = System.IO.Path.GetFileName(nomeConcluido)
+                    Catch
+                    End Try
+
+                    Dim percentualConcluido As Integer = 90
+
+                    If total > 0 Then
+                        percentualConcluido = 55 + CInt((processados / CDbl(total)) * 35)
+                    End If
+
+                    AtualizarProgressoDOMA( _
+                        f, percentualConcluido, _
+                        "Processando referências dos desenhos...", _
+                        "Último arquivo processado: " & nomeConcluido, _
+                        "Arquivos processados: " & processados.ToString() & _
+                        " de " & total.ToString())
+
+                End If
+
+            End If
+
+            indiceLinha += 1
+
+        End While
+
+    Catch
+        ' O log pode estar sendo gravado pelo PowerShell neste instante.
+        ' A leitura será repetida na próxima passagem do monitoramento.
+    End Try
+
+End Sub
+
+
+' ============================================================
+' PROCESSAMENTO DA RENOMEAÇÃO
+' LÓGICA ORIGINAL PRESERVADA
+' ============================================================
+
+Function ProcessarRenomeacao( _
+    ByVal oMontagem As AssemblyDocument, _
+    ByVal oOcorrencia As ComponentOccurrence) As Integer
+
+    ' Retorno:
+    '  1 = renomeação concluída
+    '  0 = operação cancelada pelo usuário
+    ' -1 = operação com falha
+
+    Dim oIDWsAbertosPelaRegra As New System.Collections.ArrayList
+    Dim oJanelaProgresso As System.Windows.Forms.Form = Nothing
+
+    Try
+
+        Dim oDocumento As Document
+        oDocumento = oOcorrencia.Definition.Document
+
+        If oDocumento.DocumentType <> _
+            DocumentTypeEnum.kPartDocumentObject AndAlso _
+           oDocumento.DocumentType <> _
+            DocumentTypeEnum.kAssemblyDocumentObject Then
+
+            MensagemVisual( _
+                "Selecione uma peça ou submontagem válida.", _
+                "Renomear componente")
+            Return -1
+
+        End If
+
+        Dim oArquivo As String
+        oArquivo = oDocumento.FullFileName
+
+        Dim oCaminhoProtecao As String
+        oCaminhoProtecao = "\" & oArquivo.Replace("/", "\").ToUpperInvariant() & "\"
+
+        If oCaminhoProtecao.Contains("\OLDVERSIONS\") OrElse _
+           oCaminhoProtecao.Contains("\CENTRO DE CONTEUDO INVENTOR\") OrElse _
+           oCaminhoProtecao.Contains("\CONTENT CENTER FILES\") OrElse _
+           oCaminhoProtecao.Contains("\DESIGN ACCELERATOR\") Then
+
+            MensagemVisual( _
+                "Este arquivo está em uma pasta protegida." & _
+                vbCrLf & vbCrLf & oArquivo & vbCrLf & vbCrLf & _
+                "Nenhuma alteração foi realizada.", _
+                "Renomeação bloqueada", _
+                System.Windows.Forms.MessageBoxButtons.OK, _
+                System.Windows.Forms.MessageBoxIcon.Warning)
+            Return -1
+
+        End If
+
+        If String.IsNullOrWhiteSpace(oArquivo) OrElse _
+           Not System.IO.File.Exists(oArquivo) Then
+
+            MensagemVisual( _
+                "O arquivo original não foi encontrado:" & vbCrLf & oArquivo, _
+                "Renomear componente")
+
+            Return -1
+
+        End If
+
+        Dim oPasta As String
+        Dim oExtensao As String
+        Dim oNomeAtual As String
+
+        oPasta = System.IO.Path.GetDirectoryName(oArquivo)
+        oExtensao = System.IO.Path.GetExtension(oArquivo)
+        oNomeAtual = System.IO.Path.GetFileNameWithoutExtension(oArquivo)
+
+        Dim oNovoNome As String
+        oNovoNome = EntradaVisual( _
+            "Nome atual: " & oNomeAtual & vbCrLf & vbCrLf & _
+            "Digite o novo nome, sem a extensão:", _
+            "Renomear componente", oNomeAtual)
+
+        If String.IsNullOrWhiteSpace(oNovoNome) Then Return 0
+
+        oNovoNome = oNovoNome.Trim()
+
+        If oNovoNome.IndexOfAny( _
+            System.IO.Path.GetInvalidFileNameChars()) >= 0 OrElse _
+           oNovoNome.EndsWith(".") OrElse _
+           oNovoNome.EndsWith(" ") Then
+
+            MensagemVisual( _
+                "O nome contém caracteres inválidos.", _
+                "Renomear componente")
+            Return -1
+
+        End If
+
+        If String.Equals(oNovoNome, oNomeAtual, _
+            StringComparison.OrdinalIgnoreCase) Then Return 0
+
+        Dim oNovoArquivo As String
+        oNovoArquivo = System.IO.Path.Combine( _
+            oPasta, oNovoNome & oExtensao)
+
+        If System.IO.File.Exists(oNovoArquivo) Then
+
+            MensagemVisual( _
+                "Já existe um arquivo com esse nome:" & _
+                vbCrLf & oNovoArquivo, _
+                "Renomear componente")
+
+            Return -1
+
+        End If
+
+        If MensagemVisual( _
+            "Arquivo atual:" & vbCrLf & oArquivo & _
+            vbCrLf & vbCrLf & _
+            "Novo arquivo:" & vbCrLf & oNovoArquivo & _
+            vbCrLf & vbCrLf & _
+            "Antes de continuar, certifique-se de que existe uma cópia de segurança do projeto." & _
+            vbCrLf & vbCrLf & _
+            "Os desenhos IDW do Workspace e suas subpastas serão verificados, exceto OldVersions." & _
+            vbCrLf & vbCrLf & _
+            "Deseja continuar?", _
+            "Confirmar renomeação", _
+            System.Windows.Forms.MessageBoxButtons.YesNo, _
+            System.Windows.Forms.MessageBoxIcon.Warning) <> _
+            System.Windows.Forms.DialogResult.Yes Then Return 0
+
+        Dim oPastaRaiz As String = ""
+
+        Try
+            oPastaRaiz = ThisApplication.DesignProjectManager. _
+                ActiveDesignProject.WorkspacePath
+        Catch
+            oPastaRaiz = ""
+        End Try
+
+        If String.IsNullOrWhiteSpace(oPastaRaiz) OrElse _
+           Not System.IO.Directory.Exists(oPastaRaiz) Then
+
+            MensagemVisual( _
+                "Não foi possível identificar a pasta de trabalho do projeto ativo." & _
+                vbCrLf & vbCrLf & "A renomeação foi cancelada.", _
+                "Renomear componente")
+            Return -1
+
+        End If
+
+        Dim oRaizNormalizada As String
+        Dim oArquivoNormalizado As String
+
+        oRaizNormalizada = System.IO.Path.GetFullPath(oPastaRaiz).TrimEnd( _
+            System.IO.Path.DirectorySeparatorChar, _
+            System.IO.Path.AltDirectorySeparatorChar) & _
+            System.IO.Path.DirectorySeparatorChar
+
+        oArquivoNormalizado = System.IO.Path.GetFullPath(oArquivo)
+
+        If Not oArquivoNormalizado.StartsWith( _
+            oRaizNormalizada, StringComparison.OrdinalIgnoreCase) Then
+
+            MensagemVisual( _
+                "O arquivo selecionado não pertence à pasta de trabalho do projeto ativo." & _
+                vbCrLf & vbCrLf & "A renomeação foi cancelada.", _
+                "Renomear componente")
+            Return -1
+
+        End If
+
+        oJanelaProgresso = CriarJanelaProgressoDOMA()
+        AtualizarProgressoDOMA( _
+            oJanelaProgresso, 5, _
+            "Verificando documentos abertos...", _
+            "Conferindo os desenhos atualmente abertos no Inventor.", _
+            "Verificação inicial")
+
+        ' ============================================================
+        ' VERIFICA SOMENTE OS IDWS ABERTOS DENTRO DO WORKSPACE
+        ' Desenhos externos ao Workspace são ignorados completamente.
+        ' Se um IDW interno aberto referenciar o componente, interrompe.
+        ' Se a leitura de um IDW interno falhar, interrompe por segurança.
+        ' ============================================================
+
+        Dim oIDWsAbertosNoInventor As New System.Collections.ArrayList
+        Dim oIDWsComReferenciaAberta As New System.Collections.ArrayList
+
+        Dim oDocumentoAberto As Document
+        Dim oDescritorAberto As Object
+        Dim oCaminhoReferenciaAberta As String
+        Dim oCaminhoIDWAberto As String
+        Dim oCaminhoIDWAbertoNormalizado As String
+        Dim oErroVerificacaoAberta As String = ""
+        Dim oNomeIDWAberto As String
+        Dim oDocumentosVerificados As Integer = 0
+        Dim oTotalDocumentosAbertos As Integer = ThisApplication.Documents.Count
+        If oTotalDocumentosAbertos < 1 Then oTotalDocumentosAbertos = 1
+
+        For Each oDocumentoAberto In ThisApplication.Documents
+
+            oDocumentosVerificados += 1
+            Dim oPercentualAbertos As Integer = 5 + CInt( _
+                (oDocumentosVerificados / CDbl(oTotalDocumentosAbertos)) * 7)
+            AtualizarProgressoDOMA( _
+                oJanelaProgresso, oPercentualAbertos, _
+                "Verificando documentos abertos...", _
+                "Analisando documentos carregados no Inventor.", _
+                "Documentos verificados: " & oDocumentosVerificados.ToString() & _
+                " de " & oTotalDocumentosAbertos.ToString())
+
+            If oDocumentoAberto.DocumentType = _
+                DocumentTypeEnum.kDrawingDocumentObject Then
+
+                oCaminhoIDWAberto = ""
+                oCaminhoIDWAbertoNormalizado = ""
+                oNomeIDWAberto = "Desenho aberto sem nome de arquivo"
+
+                Try
+                    oCaminhoIDWAberto = oDocumentoAberto.FullFileName
+
+                    If Not String.IsNullOrWhiteSpace(oCaminhoIDWAberto) Then
+
+                        oCaminhoIDWAbertoNormalizado = _
+                            System.IO.Path.GetFullPath(oCaminhoIDWAberto)
+                        oNomeIDWAberto = oCaminhoIDWAbertoNormalizado
+
+                        ' Somente desenhos dentro do Workspace entram
+                        ' na proteção e na lista de exclusão do processamento.
+                        If oCaminhoIDWAbertoNormalizado.StartsWith( _
+                            oRaizNormalizada, _
+                            StringComparison.OrdinalIgnoreCase) Then
+
+                            If Not oIDWsAbertosNoInventor.Contains( _
+                                oCaminhoIDWAbertoNormalizado) Then
+                                oIDWsAbertosNoInventor.Add( _
+                                    oCaminhoIDWAbertoNormalizado)
+                            End If
+
+                            For Each oDescritorAberto In _
+                                oDocumentoAberto.ReferencedDocumentDescriptors
+
+                                oCaminhoReferenciaAberta = _
+                                    oDescritorAberto.FullDocumentName
+
+                                If Not String.IsNullOrWhiteSpace( _
+                                    oCaminhoReferenciaAberta) Then
+
+                                    oCaminhoReferenciaAberta = _
+                                        System.IO.Path.GetFullPath( _
+                                            oCaminhoReferenciaAberta)
+
+                                    If String.Equals( _
+                                        oCaminhoReferenciaAberta, _
+                                        oArquivoNormalizado, _
+                                        StringComparison.OrdinalIgnoreCase) Then
+
+                                        If Not oIDWsComReferenciaAberta.Contains( _
+                                            oNomeIDWAberto) Then
+                                            oIDWsComReferenciaAberta.Add( _
+                                                oNomeIDWAberto)
+                                        End If
+
+                                    End If
+
+                                End If
+
+                            Next
+
+                        End If
+
+                    End If
+
+                Catch ex As Exception
+
+                    ' Um erro só bloqueia quando já foi identificado que
+                    ' o desenho está dentro do Workspace.
+                    If Not String.IsNullOrWhiteSpace( _
+                        oCaminhoIDWAbertoNormalizado) AndAlso _
+                       oCaminhoIDWAbertoNormalizado.StartsWith( _
+                            oRaizNormalizada, _
+                            StringComparison.OrdinalIgnoreCase) Then
+
+                        oErroVerificacaoAberta = _
+                            oNomeIDWAberto & vbCrLf & ex.Message
+                        Exit For
+
+                    End If
+
+                End Try
+
+            End If
+
+        Next
+
+        If Not String.IsNullOrWhiteSpace(oErroVerificacaoAberta) Then
+
+            FecharProgressoDOMA(oJanelaProgresso)
+
+            MensagemVisual( _
+                "Não foi possível verificar um desenho aberto dentro do Workspace:" & _
+                vbCrLf & vbCrLf & oErroVerificacaoAberta & _
+                vbCrLf & vbCrLf & _
+                "Nenhuma renomeação foi realizada.", _
+                "Renomeação bloqueada", _
+                System.Windows.Forms.MessageBoxButtons.OK, _
+                System.Windows.Forms.MessageBoxIcon.Warning)
+
+            Return -1
+
+        End If
+
+
+Dim oPastaIDW As String
+
+' A busca dos desenhos será realizada a partir
+' da raiz do Workspace do projeto ativo.
+oPastaIDW = oPastaRaiz
+
+If Not System.IO.Directory.Exists(oPastaIDW) Then
+
+    FecharProgressoDOMA(oJanelaProgresso)
+
+    MensagemVisual( _
+        "A pasta Workspace do projeto não foi encontrada:" & _
+        vbCrLf & oPastaIDW & vbCrLf & vbCrLf & _
+        "A renomeação foi cancelada.", _
+        "Renomear componente")
+    Return -1
+
+End If
+
+
+        Dim oArquivoIDWs() As String
+        Dim oListaIDWs As New System.Collections.ArrayList
+        Dim oPastasPendentes As New System.Collections.Stack
+        Dim oPastaPesquisa As String
+        Dim oSubpastas As String()
+        Dim oArquivosEncontrados As String()
+        Dim oSubpasta As String
+        Dim oNomePasta As String
+        Dim oIDWEstaAbertoNoInventor As Boolean
+        Dim oCaminhoAbertoComparacao As String
+        Dim oArquivoIDW As String
+
+        oPastasPendentes.Push(oPastaIDW)
+        Dim oPastasVerificadas As Integer = 0
+
+        AtualizarProgressoDOMA( _
+            oJanelaProgresso, 15, _
+            "Localizando desenhos do projeto...", _
+            "Percorrendo o Workspace e suas subpastas, exceto OldVersions.", _
+            "Iniciando busca de arquivos IDW...")
+
+        While oPastasPendentes.Count > 0
+
+            oPastaPesquisa = CStr(oPastasPendentes.Pop())
+            oPastasVerificadas += 1
+            AtualizarProgressoDOMA( _
+                oJanelaProgresso, 15, _
+                "Localizando desenhos do projeto...", _
+                System.IO.Path.GetFileName(oPastaPesquisa), _
+                "Pastas verificadas: " & oPastasVerificadas.ToString())
+
+            Try
+                oArquivosEncontrados = System.IO.Directory.GetFiles( _
+                    oPastaPesquisa, "*.idw", _
+                    System.IO.SearchOption.TopDirectoryOnly)
+
+                For Each oArquivoEncontrado As String In oArquivosEncontrados
+                    oListaIDWs.Add(oArquivoEncontrado)
+                Next
+            Catch
+            End Try
+
+            Try
+                oSubpastas = System.IO.Directory.GetDirectories(oPastaPesquisa)
+
+                For Each oSubpasta In oSubpastas
+
+                    oNomePasta = System.IO.Path.GetFileName( _
+                        oSubpasta.TrimEnd( _
+                            System.IO.Path.DirectorySeparatorChar, _
+                            System.IO.Path.AltDirectorySeparatorChar))
+
+                    If Not String.Equals( _
+                        oNomePasta, "OldVersions", _
+                        StringComparison.OrdinalIgnoreCase) Then
+
+                        oPastasPendentes.Push(oSubpasta)
+
+                    End If
+
+                Next
+            Catch
+            End Try
+
+        End While
+
+        oArquivoIDWs = DirectCast( _
+            oListaIDWs.ToArray(GetType(String)), String())
+
+        AtualizarProgressoDOMA( _
+            oJanelaProgresso, 25, _
+            "Busca de desenhos concluída.", _
+            "Arquivos IDW localizados no Workspace.", _
+            "IDWs localizados: " & oArquivoIDWs.Length.ToString())
+
+        If oArquivoIDWs.Length = 0 Then
+
+            FecharProgressoDOMA(oJanelaProgresso)
+
+            MensagemVisual( _
+                "Nenhum desenho IDW foi encontrado no Workspace do projeto ativo.", _
+                "Renomear componente", _
+                System.Windows.Forms.MessageBoxButtons.OK, _
+                System.Windows.Forms.MessageBoxIcon.Warning)
+
+            Return -1
+
+        End If
+
+        ' ============================================================
+        ' PREPARA A LISTA PARA O APPRENTICE
+        ' Somente IDWs fechados, dentro do Workspace e fora de OldVersions.
+        ' IDWs abertos pelo usuário já foram verificados acima e não entram.
+        ' ============================================================
+
+        Dim oIDWsParaApprentice As New System.Collections.ArrayList
+
+        For Each oArquivoIDW In oArquivoIDWs
+
+            oIDWEstaAbertoNoInventor = False
+
+            For Each oCaminhoAbertoComparacao In oIDWsAbertosNoInventor
+
+                If String.Equals( _
+                    System.IO.Path.GetFullPath(oArquivoIDW), _
+                    CStr(oCaminhoAbertoComparacao), _
+                    StringComparison.OrdinalIgnoreCase) Then
+
+                    oIDWEstaAbertoNoInventor = True
+                    Exit For
+
+                End If
+
+            Next
+
+            If Not oIDWEstaAbertoNoInventor Then
+                oIDWsParaApprentice.Add(oArquivoIDW)
+            End If
+
+        Next
+
+        AtualizarProgressoDOMA( _
+            oJanelaProgresso, 32, _
+            "Preparando desenhos para atualização...", _
+            "Separando os IDWs fechados que serão verificados pelo Apprentice.", _
+            "IDWs destinados ao Apprentice: " & oIDWsParaApprentice.Count.ToString())
+
+        AtualizarProgressoDOMA( _
+            oJanelaProgresso, 36, _
+            "Renomeando componente...", _
+            "Atualizando o Part Number e o arquivo do componente.", _
+            "Etapa de renomeação")
+
+        Dim oPropriedade As Object
+        oPropriedade = oDocumento.PropertySets. _
+            Item("Design Tracking Properties").Item("Part Number")
+        oPropriedade.Value = oNovoNome
+        oDocumento.Save()
+
+        ThisApplication.FileManager.MoveFile(oArquivo, oNovoArquivo)
+
+        Dim oOriginalExiste As Boolean
+        Dim oDestinoExiste As Boolean
+
+        oOriginalExiste = System.IO.File.Exists(oArquivo)
+        oDestinoExiste = System.IO.File.Exists(oNovoArquivo)
+
+        If oOriginalExiste OrElse Not oDestinoExiste Then
+
+            FecharProgressoDOMA(oJanelaProgresso)
+
+            MensagemVisual( _
+                "Não foi possível confirmar a renomeação." & _
+                vbCrLf & vbCrLf & _
+                "Verifique os arquivos antes de continuar.", _
+                "Renomear componente")
+
+            Return -1
+
+        End If
+
+        oOcorrencia.ReferencedDocumentDescriptor. _
+            ReferencedFileDescriptor.ReplaceReference(oNovoArquivo)
+
+        AtualizarProgressoDOMA( _
+            oJanelaProgresso, 45, _
+            "Atualizando referências...", _
+            "Referência da ocorrência substituída na montagem ativa.", _
+            "Componente renomeado")
+			
+' ============================================================
+' ATUALIZA REFERENCIAS DOS IDWS ABERTOS NO INVENTOR
+' Não salva os desenhos. O usuário fará o salvamento manual.
+' ============================================================
+
+Dim oIDWDocumentoAberto As Document
+Dim oIDWDescritor As Object
+Dim oDescritorAtualizar As Object
+
+Dim oIDWCaminho As String
+Dim oIDWCaminhoNormalizado As String
+Dim oIDWCaminhoReferencia As String
+
+Dim oIDWEncontrado As Boolean
+Dim oNovaReferenciaConfirmada As Boolean
+Dim oReferenciaAntigaPermaneceu As Boolean
+
+Dim oDescritoresParaAtualizar As System.Collections.ArrayList
+
+Dim oIDWFalhasAbertos As New System.Collections.ArrayList
+Dim oIDWAtualizados As Integer = 0
+Dim oDocumentosAbertosVerificados As Integer = 0
+Dim oTotalDocumentosAbertos2 As Integer = ThisApplication.Documents.Count
+If oTotalDocumentosAbertos2 < 1 Then oTotalDocumentosAbertos2 = 1
+
+For Each oIDWDocumentoAberto In ThisApplication.Documents
+
+    oDocumentosAbertosVerificados += 1
+    Dim oPercentualAbertos2 As Integer = 45 + CInt( _
+        (oDocumentosAbertosVerificados / CDbl(oTotalDocumentosAbertos2)) * 5)
+    AtualizarProgressoDOMA( _
+        oJanelaProgresso, oPercentualAbertos2, _
+        "Conferindo desenhos abertos...", _
+        "Verificando e substituindo referências nos documentos carregados.", _
+        "Documentos conferidos: " & oDocumentosAbertosVerificados.ToString() & _
+        " de " & oTotalDocumentosAbertos2.ToString())
+
+    If oIDWDocumentoAberto.DocumentType = _
+        DocumentTypeEnum.kDrawingDocumentObject Then
+
+        oIDWCaminho = ""
+
+        Try
+            oIDWCaminho = oIDWDocumentoAberto.FullFileName
+
+            If Not String.IsNullOrWhiteSpace(oIDWCaminho) Then
+
+                oIDWCaminhoNormalizado = _
+                    System.IO.Path.GetFullPath(oIDWCaminho)
+
+                If oIDWCaminhoNormalizado.StartsWith( _
+                    oRaizNormalizada, _
+                    StringComparison.OrdinalIgnoreCase) Then
+
+                    oIDWEncontrado = False
+
+                    oDescritoresParaAtualizar = _
+                        New System.Collections.ArrayList
+
+                    ' Localiza e guarda as referências antigas.
+                    For Each oIDWDescritor In _
+                        oIDWDocumentoAberto.ReferencedDocumentDescriptors
+
+                        oIDWCaminhoReferencia = _
+                            oIDWDescritor.FullDocumentName
+
+                        If Not String.IsNullOrWhiteSpace( _
+                            oIDWCaminhoReferencia) Then
+
+                            oIDWCaminhoReferencia = _
+                                System.IO.Path.GetFullPath( _
+                                    oIDWCaminhoReferencia)
+
+                            If String.Equals( _
+                                oIDWCaminhoReferencia, _
+                                oArquivoNormalizado, _
+                                StringComparison.OrdinalIgnoreCase) Then
+
+                                oDescritoresParaAtualizar.Add( _
+                                    oIDWDescritor.ReferencedFileDescriptor)
+
+                                oIDWEncontrado = True
+
+                            End If
+
+                        End If
+
+                    Next
+
+                    ' Substitui as referências localizadas.
+                    If oIDWEncontrado Then
+
+                        For Each oDescritorAtualizar In _
+                            oDescritoresParaAtualizar
+
+                            oDescritorAtualizar.ReplaceReference( _
+                                oNovoArquivo)
+
+                        Next
+
+                        ' Confirma a nova referência e a ausência da antiga.
+                        oNovaReferenciaConfirmada = False
+                        oReferenciaAntigaPermaneceu = False
+
+                        For Each oIDWDescritor In _
+                            oIDWDocumentoAberto.ReferencedDocumentDescriptors
+
+                            oIDWCaminhoReferencia = _
+                                oIDWDescritor.FullDocumentName
+
+                            If Not String.IsNullOrWhiteSpace( _
+                                oIDWCaminhoReferencia) Then
+
+                                oIDWCaminhoReferencia = _
+                                    System.IO.Path.GetFullPath( _
+                                        oIDWCaminhoReferencia)
+
+                                If String.Equals( _
+                                    oIDWCaminhoReferencia, _
+                                    System.IO.Path.GetFullPath(oNovoArquivo), _
+                                    StringComparison.OrdinalIgnoreCase) Then
+
+                                    oNovaReferenciaConfirmada = True
+
+                                End If
+
+                                If String.Equals( _
+                                    oIDWCaminhoReferencia, _
+                                    oArquivoNormalizado, _
+                                    StringComparison.OrdinalIgnoreCase) Then
+
+                                    oReferenciaAntigaPermaneceu = True
+
+                                End If
+
+                            End If
+
+                        Next
+
+                        If Not oNovaReferenciaConfirmada Then
+                            Throw New Exception( _
+                                "A nova referência não foi confirmada no desenho.")
+                        End If
+
+                        If oReferenciaAntigaPermaneceu Then
+                            Throw New Exception( _
+                                "A referência antiga permaneceu no desenho.")
+                        End If
+
+                        oIDWAtualizados += 1
+
+                    End If
+
+                End If
+
+            End If
+
+        Catch ex As Exception
+
+            oIDWFalhasAbertos.Add( _
+                oIDWCaminho & vbCrLf & ex.Message)
+
+        End Try
+
+    End If
+
+Next
+
+
+' ============================================================
+' CONTROLE DE FALHAS DOS IDWS ABERTOS
+' ============================================================
+
+Dim oFalhasDesenho As Integer = 0
+
+If oIDWFalhasAbertos.Count > 0 Then
+    oFalhasDesenho = 1
+End If
+
+Dim oListaFalhasIDWsAbertos As String = ""
+
+If oIDWFalhasAbertos.Count > 0 Then
+
+    For Each oFalhaIDWAberto As String In oIDWFalhasAbertos
+
+        oListaFalhasIDWsAbertos &= _
+            oFalhaIDWAberto & vbCrLf & vbCrLf
+
+    Next
+
+End If
+
+
+' ============================================================
+' PREPARAÇÃO DOS ARQUIVOS DO APPRENTICE
+' ============================================================
+
+AtualizarProgressoDOMA( _
+    oJanelaProgresso, 50, _
+    "Preparando processamento dos IDWs...", _
+    "Criando os arquivos temporários de entrada, script e registro.", _
+    "IDWs fechados: " & oIDWsParaApprentice.Count.ToString())
+
+Dim oResultadoApprentice As String = ""
+Dim oPastaTemporaria As String
+Dim oArquivoEntradaApprentice As String
+Dim oArquivoScriptApprentice As String
+Dim oArquivoLogApprentice As String
+
+Dim oLinhasEntrada As New System.Collections.ArrayList
+Dim oScriptApprentice As String
+
+Dim oProcesso As System.Diagnostics.Process
+Dim oInicioProcesso As New System.Diagnostics.ProcessStartInfo
+
+
+oPastaTemporaria = System.IO.Path.GetTempPath()
+
+oArquivoEntradaApprentice = System.IO.Path.Combine( _
+    oPastaTemporaria, _
+    "Renomear_IDW_Entrada_" & _
+    System.Guid.NewGuid().ToString("N") & ".txt")
+
+oArquivoScriptApprentice = System.IO.Path.Combine( _
+    oPastaTemporaria, _
+    "Renomear_IDW_Apprentice_" & _
+    System.Guid.NewGuid().ToString("N") & ".ps1")
+
+oArquivoLogApprentice = System.IO.Path.Combine( _
+    oPastaTemporaria, _
+    "Renomear_IDW_Log_" & _
+    System.Guid.NewGuid().ToString("N") & ".txt")
+
+
+oLinhasEntrada.Add(oArquivo)
+oLinhasEntrada.Add(oNovoArquivo)
+oLinhasEntrada.Add(oPastaRaiz)
+
+For Each oArquivoIDW In oIDWsParaApprentice
+    oLinhasEntrada.Add(CStr(oArquivoIDW))
+Next
+
+System.IO.File.WriteAllLines( _
+    oArquivoEntradaApprentice, _
+    DirectCast(oLinhasEntrada.ToArray(GetType(String)), String()), _
+    New System.Text.UTF8Encoding(False))
+
+
+' ============================================================
+' SCRIPT POWERSHELL - APPRENTICE
+' ============================================================
+
+oScriptApprentice = _
+    "$ErrorActionPreference = 'Stop'" & vbCrLf & _
+    "$Entrada = $args[0]" & vbCrLf & _
+    "$Log = $args[1]" & vbCrLf & _
+    "function Registrar([string]$Texto) { Add-Content -LiteralPath $Log -Value $Texto -Encoding UTF8 }" & vbCrLf & _
+    "$App = $null" & vbCrLf & _
+    "$Total = 0; $Alterados = 0; $SemReferencia = 0; $Erros = 0; $Confirmados = 0; $Processados = 0" & vbCrLf & _
+    "try {" & vbCrLf & _
+    "  $Linhas = @(Get-Content -LiteralPath $Entrada -Encoding UTF8)" & vbCrLf & _
+    "  $Antigo = [System.IO.Path]::GetFullPath([string]$Linhas[0])" & vbCrLf & _
+    "  $Novo = [System.IO.Path]::GetFullPath([string]$Linhas[1])" & vbCrLf & _
+    "  $Workspace = [System.IO.Path]::GetFullPath([string]$Linhas[2]).TrimEnd('\') + '\'" & vbCrLf & _
+    "  $CLSID = [guid]'C343ED84-A129-11D3-B799-0060B0F159EF'" & vbCrLf & _
+    "  $Tipo = [System.Type]::GetTypeFromCLSID($CLSID)" & vbCrLf & _
+    "  $App = [System.Activator]::CreateInstance($Tipo)" & vbCrLf & _
+    "  Registrar 'APPRENTICE|CRIADO'" & vbCrLf & _
+    "  for ($i = 3; $i -lt $Linhas.Count; $i++) {" & vbCrLf & _
+    "    $IDW = [string]$Linhas[$i]; $Doc = $null; $Achou = 0" & vbCrLf & _
+    "    Registrar ('ATUAL|' + $IDW)" & vbCrLf & _
+    "    try {" & vbCrLf & _
+    "      $Total++" & vbCrLf & _
+    "      $Doc = $App.Open($IDW)" & vbCrLf & _
+    "      if (-not $Doc.IsModifiable) { throw 'O desenho não está modificável.' }" & vbCrLf & _
+    "      if ($Doc.NeedsMigrating) { throw 'O desenho precisa ser migrado.' }" & vbCrLf & _
+    "      $CaminhosAntigos = @()" & vbCrLf & _
+    "      $DestinosEsperados = @()" & vbCrLf & _
+    "      foreach ($Ref in $Doc.ReferencedFileDescriptors) {" & vbCrLf & _
+    "        $CaminhoRef = [string]$Ref.FullFileName" & vbCrLf & _
+    "        if (-not [string]::IsNullOrWhiteSpace($CaminhoRef) -and [System.IO.Path]::GetFileName($CaminhoRef) -ieq [System.IO.Path]::GetFileName($Antigo)) {" & vbCrLf & _
+    "          $CaminhoRef = [System.IO.Path]::GetFullPath($CaminhoRef)" & vbCrLf & _
+    "          if (-not $CaminhoRef.StartsWith($Workspace, [System.StringComparison]::OrdinalIgnoreCase)) { continue }" & vbCrLf & _
+    "          $Destino = [System.IO.Path]::Combine([System.IO.Path]::GetDirectoryName($CaminhoRef), [System.IO.Path]::GetFileName($Novo))" & vbCrLf & _
+    "          if (-not [System.IO.File]::Exists($Destino)) { throw ('Arquivo novo não encontrado ao lado da referência antiga: ' + $Destino) }" & vbCrLf & _
+    "          $CaminhosAntigos += $CaminhoRef" & vbCrLf & _
+    "          $DestinosEsperados += $Destino" & vbCrLf & _
+    "          $Ref.PutLogicalFileNameUsingFull($Destino)" & vbCrLf & _
+    "          $Achou++" & vbCrLf & _
+    "        }" & vbCrLf & _
+    "      }" & vbCrLf & _
+    "      if ($Achou -eq 0) {" & vbCrLf & _
+    "        $SemReferencia++; Registrar ('IDW|SEM_REFERENCIA|' + $IDW)" & vbCrLf & _
+    "        $Doc.Close(); $Doc = $null" & vbCrLf & _
+    "        $Processados++; Registrar ('PROGRESS|' + $Processados + '|' + ($Linhas.Count - 3) + '|' + $IDW)" & vbCrLf & _
+    "        continue" & vbCrLf & _
+    "      }" & vbCrLf & _
+    "      $Save = $App.FileSaveAs" & vbCrLf & _
+    "      $Save.AddFileToSave($Doc, $IDW)" & vbCrLf & _
+    "      $Save.ExecuteSave()" & vbCrLf & _
+    "      $Doc.Close(); $Doc = $null" & vbCrLf & _
+    "      $Doc = $App.Open($IDW)" & vbCrLf & _
+    "      $CaminhosConfirmados = @()" & vbCrLf & _
+    "      foreach ($RefConf in $Doc.ReferencedFileDescriptors) {" & vbCrLf & _
+    "        $CaminhoConf = [string]$RefConf.FullFileName" & vbCrLf & _
+    "        if (-not [string]::IsNullOrWhiteSpace($CaminhoConf)) {" & vbCrLf & _
+    "          $CaminhoConf = [System.IO.Path]::GetFullPath($CaminhoConf)" & vbCrLf & _
+    "          $CaminhosConfirmados += $CaminhoConf" & vbCrLf & _
+    "        }" & vbCrLf & _
+    "      }" & vbCrLf & _
+    "      $Novas = 0; $Antigas = 0" & vbCrLf & _
+    "      foreach ($DestinoEsperado in $DestinosEsperados) {" & vbCrLf & _
+    "        if ($CaminhosConfirmados -contains $DestinoEsperado) { $Novas++ }" & vbCrLf & _
+    "      }" & vbCrLf & _
+    "      foreach ($CaminhoAntigo in $CaminhosAntigos) {" & vbCrLf & _
+    "        if ($CaminhosConfirmados -contains $CaminhoAntigo) { $Antigas++ }" & vbCrLf & _
+    "      }" & vbCrLf & _
+    "      if ($Antigas -gt 0 -or $Novas -lt $Achou) { throw ('Falha na confirmação. Novas=' + $Novas + '; antigas=' + $Antigas + '; esperadas=' + $Achou) }" & vbCrLf & _
+    "      $Confirmados++; $Alterados++" & vbCrLf & _
+    "      Registrar ('IDW|SALVAMENTO_CONFIRMADO|' + $IDW + '|REFERENCIAS=' + $Novas)" & vbCrLf & _
+    "      $Doc.Close(); $Doc = $null" & vbCrLf & _
+    "      $Processados++; Registrar ('PROGRESS|' + $Processados + '|' + ($Linhas.Count - 3) + '|' + $IDW)" & vbCrLf & _
+    "    } catch {" & vbCrLf & _
+    "      $Erros++; Registrar ('IDW|ERRO|' + $IDW + '|' + $_.Exception.Message)" & vbCrLf & _
+    "      if ($null -ne $Doc) { try { $Doc.Close() } catch {}; $Doc = $null }" & vbCrLf & _
+    "      $Processados++; Registrar ('PROGRESS|' + $Processados + '|' + ($Linhas.Count - 3) + '|' + $IDW)" & vbCrLf & _
+    "    }" & vbCrLf & _
+    "  }" & vbCrLf & _
+    "  Registrar ('RESUMO|TOTAL|' + $Total)" & vbCrLf & _
+    "  Registrar ('RESUMO|ALTERADOS|' + $Alterados)" & vbCrLf & _
+    "  Registrar ('RESUMO|CONFIRMADOS|' + $Confirmados)" & vbCrLf & _
+    "  Registrar ('RESUMO|SEM_REFERENCIA|' + $SemReferencia)" & vbCrLf & _
+    "  Registrar ('RESUMO|ERROS|' + $Erros)" & vbCrLf & _
+    "  if ($Erros -eq 0) { Registrar 'RESULTADO|SUCESSO' } else { Registrar 'RESULTADO|FALHA' }" & vbCrLf & _
+    "} catch { Registrar ('FALHA_GERAL|' + $_.Exception.Message); exit 2 } finally { if ($null -ne $App) { try { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($App) } catch {} } }" & vbCrLf
+
+
+System.IO.File.WriteAllText( _
+    oArquivoScriptApprentice, _
+    oScriptApprentice, _
+    New System.Text.UTF8Encoding(False))
+
+
+' ============================================================
+' EXECUTA O APPRENTICE
+' ============================================================
+
+oInicioProcesso.FileName = "powershell.exe"
+
+oInicioProcesso.Arguments = _
+    "-NoProfile -ExecutionPolicy Bypass -File """ & _
+    oArquivoScriptApprentice & """ """ & _
+    oArquivoEntradaApprentice & """ """ & _
+    oArquivoLogApprentice & """"
+
+oInicioProcesso.UseShellExecute = False
+oInicioProcesso.CreateNoWindow = True
+oInicioProcesso.WindowStyle = _
+    System.Diagnostics.ProcessWindowStyle.Hidden
+
+AtualizarProgressoDOMA( _
+    oJanelaProgresso, 55, _
+    "Iniciando o Apprentice...", _
+    "Aguardando a abertura do mecanismo de processamento de desenhos.", _
+    "IDWs na fila: " & oIDWsParaApprentice.Count.ToString())
+
+oProcesso = System.Diagnostics.Process.Start(oInicioProcesso)
+
+Dim oIndiceLinhaLog As Integer = 0
+Dim oIDWsProcessados As Integer = 0
+Dim oTotalIDWsProcessamento As Integer = oIDWsParaApprentice.Count
+
+If oTotalIDWsProcessamento = 0 Then
+
+    AtualizarProgressoDOMA( _
+        oJanelaProgresso, 55, _
+        "Iniciando o Apprentice...", _
+        "Não há IDWs fechados na fila; aguardando a finalização da inicialização.", _
+        "Arquivos processados: 0 de 0")
+
+    While Not oProcesso.HasExited
+        System.Windows.Forms.Application.DoEvents()
+        System.Threading.Thread.Sleep(200)
+    End While
+
+    AtualizarProgressoDOMA( _
+        oJanelaProgresso, 90, _
+        "Etapa Apprentice concluída.", _
+        "Não havia IDWs fechados para processamento externo.", _
+        "Arquivos processados: 0 de 0")
+
+Else
+
+    While Not oProcesso.HasExited
+
+        LerLogProgressoDOMA( _
+            oArquivoLogApprentice, oJanelaProgresso, _
+            oIndiceLinhaLog, oIDWsProcessados, oTotalIDWsProcessamento)
+
+        System.Windows.Forms.Application.DoEvents()
+        System.Threading.Thread.Sleep(200)
+
+    End While
+
+    ' Uma última leitura captura as linhas gravadas no encerramento do processo.
+    LerLogProgressoDOMA( _
+        oArquivoLogApprentice, oJanelaProgresso, _
+        oIndiceLinhaLog, oIDWsProcessados, oTotalIDWsProcessamento)
+
+End If
+
+If System.IO.File.Exists(oArquivoLogApprentice) Then
+
+    oResultadoApprentice = System.IO.File.ReadAllText( _
+        oArquivoLogApprentice)
+
+End If
+
+
+' ============================================================
+' VERIFICA RESULTADO DO APPRENTICE
+' ============================================================
+
+If oProcesso.ExitCode <> 0 OrElse _
+   Not oResultadoApprentice.Contains("RESULTADO|SUCESSO") OrElse _
+   Not oResultadoApprentice.Contains("RESUMO|ERROS|0") Then
+
+    oFalhasDesenho = 1
+
+    AtualizarProgressoDOMA( _
+        oJanelaProgresso, 93, _
+        "Processamento concluído com pendências.", _
+        "O registro técnico contém os desenhos que precisam de verificação.", _
+        "Verificação necessária")
+    FecharProgressoDOMA(oJanelaProgresso)
+
+    MensagemVisual( _
+        "A renomeação do componente foi realizada, mas o processamento dos desenhos pelo Apprentice apresentou falha." & _
+        vbCrLf & vbCrLf & _
+        "Consulte o registro para identificar os desenhos que precisam de verificação:" & _
+        vbCrLf & oArquivoLogApprentice & _
+        vbCrLf & vbCrLf & _
+        "O registro técnico foi mantido em arquivo.", _
+        "Verificação necessária", _
+        System.Windows.Forms.MessageBoxButtons.OK, _
+        System.Windows.Forms.MessageBoxIcon.Warning)
+
+End If
+
+
+' ============================================================
+' VERIFICA RESULTADO DOS IDWS ABERTOS
+' ============================================================
+
+If oIDWFalhasAbertos.Count > 0 Then
+
+    AtualizarProgressoDOMA( _
+        oJanelaProgresso, 93, _
+        "Processamento concluído com pendências.", _
+        "Um ou mais desenhos abertos precisam de conferência.", _
+        "Verificação dos desenhos abertos")
+    FecharProgressoDOMA(oJanelaProgresso)
+
+    MensagemVisual( _
+        "A renomeação do componente foi realizada, mas não foi possível confirmar a atualização de um ou mais desenhos que estavam abertos no Inventor." & _
+        vbCrLf & vbCrLf & _
+        "Desenhos que precisam de verificação:" & _
+        vbCrLf & vbCrLf & _
+        oListaFalhasIDWsAbertos & _
+        "Os desenhos permanecem abertos e não foram salvos pela regra." & _
+        vbCrLf & _
+        "Verifique as referências antes de salvar manualmente.", _
+        "Verificação dos desenhos abertos", _
+        System.Windows.Forms.MessageBoxButtons.OK, _
+        System.Windows.Forms.MessageBoxIcon.Warning)
+
+End If
+
+
+AtualizarProgressoDOMA( _
+    oJanelaProgresso, 96, _
+    "Conferindo resultado da renomeação...", _
+    "Verificando a existência do arquivo original e do novo arquivo.", _
+    "Conferência final")
+
+' ============================================================
+' LIMPEZA DOS ARQUIVOS TEMPORARIOS
+' ============================================================
+
+Try
+    System.IO.File.Delete(oArquivoEntradaApprentice)
+    System.IO.File.Delete(oArquivoScriptApprentice)
+Catch
+End Try
+
+oIDWsAbertosPelaRegra.Clear()
+
+
+' ============================================================
+' CONFIRMA RESULTADO DA RENOMEACAO
+' ============================================================
+
+oOriginalExiste = System.IO.File.Exists(oArquivo)
+oDestinoExiste = System.IO.File.Exists(oNovoArquivo)
+
+If Not oOriginalExiste AndAlso oDestinoExiste AndAlso _
+   oFalhasDesenho = 0 Then
+
+    AtualizarProgressoDOMA( _
+        oJanelaProgresso, 100, _
+        "Renomeação concluída com sucesso.", _
+        "Todas as verificações foram concluídas sem falhas.", _
+        "Processamento finalizado")
+    System.Windows.Forms.Application.DoEvents()
+    System.Threading.Thread.Sleep(700)
+    FecharProgressoDOMA(oJanelaProgresso)
+
+    Dim janelaSucesso As System.Windows.Forms.Form
+
+    janelaSucesso = CriarJanelaDOMA( _
+        "Renomear componente", _
+        "Componente renomeado com sucesso.")
+
+    Dim botaoOK As System.Windows.Forms.Button
+
+    botaoOK = CriarBotao("OK", 165, 125, 100)
+
+    janelaSucesso.Controls.Add(botaoOK)
+
+    janelaSucesso.AcceptButton = botaoOK
+
+    AddHandler botaoOK.Click, Sub()
+        janelaSucesso.Close()
+    End Sub
+
+    janelaSucesso.ShowDialog()
+    janelaSucesso.Dispose()
+
+    Return 1
+
+Else
+
+    AtualizarProgressoDOMA( _
+        oJanelaProgresso, 95, _
+        "Concluído com pendências.", _
+        "A renomeação ou alguma referência precisa de verificação.", _
+        "Processamento finalizado com ressalvas")
+    System.Windows.Forms.Application.DoEvents()
+    System.Threading.Thread.Sleep(700)
+    FecharProgressoDOMA(oJanelaProgresso)
+
+    MensagemVisual( _
+        "A renomeação precisa ser verificada." & _
+        vbCrLf & vbCrLf & _
+        "Confira os arquivos e suas referências antes de continuar.", _
+        "Renomear componente", _
+        System.Windows.Forms.MessageBoxButtons.OK, _
+        System.Windows.Forms.MessageBoxIcon.Warning)
+
+    Return -1
+
+End If
+
+Catch ex As Exception
+
+    Dim oIDWParaFechar As Document
+
+    For Each oIDWParaFechar In oIDWsAbertosPelaRegra
+
+        Try
+            oIDWParaFechar.Close(True)
+        Catch
+        End Try
+
+    Next
+
+    oIDWsAbertosPelaRegra.Clear()
+    FecharProgressoDOMA(oJanelaProgresso)
+
+    MensagemVisual( _
+        "Ocorreu um erro durante a renomeação:" & _
+        vbCrLf & ex.Message, _
+        "Renomear componente", _
+        System.Windows.Forms.MessageBoxButtons.OK, _
+        System.Windows.Forms.MessageBoxIcon.Error)
+
+    Return -1
+
+End Try
+
+End Function
