@@ -1,0 +1,949 @@
+AddReference "System.Drawing"
+AddReference "System.Windows.Forms"
+Imports System
+Imports System.IO
+Imports System.Text
+Imports System.Text.RegularExpressions
+Imports System.Collections.Generic
+Imports System.Windows.Forms
+Imports System.Drawing
+Imports IOPath = System.IO.Path
+Imports IOFile = System.IO.File
+Imports IODir = System.IO.Directory
+
+' TROCAR PARAFUSOS v3 (Plug-in All P) - janela no padrao Sirius (v2 = formulario do Joahan)
+' Janela: uma linha por peca antiga (pasta embaixo do nome), caixinha TROCAR (verde = troca), peca nova sugerida
+' (clicar abre a lista das outras da mesma medida).
+' Fluxo: acha as pecas antigas da montagem (faltando ou sem codigo 103...) -> formulario peca a peca
+' (NOME ANTIGO x NOME NOVO, sugestao pelo indice de similaridade entre os nomes, so pecas novas com a
+' mesma medida e codigo 103...) -> Aprovar / Rejeitar / Salvar e continuar -> cadastro
+' Mapa_Familias_Parafusos.csv na pasta pt-BR (nome antigo;nome novo) -> troca so as aprovadas.
+' NAO salva a montagem.
+Sub Main()
+
+    If ThisApplication.ActiveDocumentType <> DocumentTypeEnum.kAssemblyDocumentObject Then
+        MessageBox.Show("Abra a montagem principal.", "Trocar parafusos")
+        Return
+    End If
+
+    Dim topo As AssemblyDocument = ThisApplication.ActiveDocument
+    Dim raiz As String = AcharPtBR()
+
+    If raiz = "" Then
+        MessageBox.Show("Pasta pt-BR nao encontrada.", "Trocar parafusos")
+        Return
+    End If
+
+    Dim arquivoCSV As String = IOPath.Combine(raiz, "Mapa_Familias_Parafusos.csv")
+
+    Dim mapa As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+    Dim codigos As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+    Dim relatorio As New List(Of String)
+
+    CarregarMapa(arquivoCSV, mapa)
+    CarregarMemoria(codigos)
+
+    Dim montagens As New List(Of AssemblyDocument)
+    Dim vistas As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+    montagens.Add(topo)
+    vistas.Add(topo.FullFileName)
+    For Each d As Document In topo.AllReferencedDocuments
+        Try
+            If d.DocumentType = DocumentTypeEnum.kAssemblyDocumentObject Then
+                If Not vistas.Contains(d.FullFileName) Then
+                    montagens.Add(CType(d, AssemblyDocument))
+                    vistas.Add(d.FullFileName)
+                End If
+            End If
+        Catch
+        End Try
+    Next
+
+    ' Identificar pecas antigas (nome sem extensao).
+    Dim antigas As New List(Of String)
+    Dim qtd As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+    Dim caminhoAntigo As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+    For Each asm As AssemblyDocument In montagens
+        For Each oc As ComponentOccurrence In asm.ComponentDefinition.Occurrences
+            Try
+                Dim dd As DocumentDescriptor = oc.ReferencedDocumentDescriptor
+                Dim arq As String = dd.FullDocumentName
+                If Not arq.ToLower().EndsWith(".ipt") Then Continue For
+                If Not DentroDaBiblioteca(arq, raiz) Then Continue For
+                If Not dd.ReferenceMissing Then
+                    If EhNovo(Codigo(arq, codigos)) Then Continue For
+                End If
+                Dim nome As String = IOPath.GetFileNameWithoutExtension(arq)
+                If Not antigas.Contains(nome) Then antigas.Add(nome)
+                If qtd.ContainsKey(nome) Then qtd(nome) += 1 Else qtd(nome) = 1
+                If Not caminhoAntigo.ContainsKey(nome) Then caminhoAntigo(nome) = arq
+            Catch
+            End Try
+        Next
+    Next
+
+    If antigas.Count = 0 Then
+        MessageBox.Show("Nenhuma peca antiga encontrada.", "Trocar parafusos")
+        Return
+    End If
+    antigas.Sort()
+
+    ' Pecas novas: todas as pastas de pt-BR menos as ANTIGO, agrupadas pela medida.
+    Dim caminhoNovo As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+    Dim porMedida As New Dictionary(Of String, List(Of String))
+    For Each pasta As String In IODir.GetDirectories(raiz)
+        If IOPath.GetFileName(pasta).ToUpper().Contains("ANTIGO") Then Continue For
+        For Each f As String In IODir.GetFiles(pasta, "*.ipt")
+            Dim nome As String = IOPath.GetFileNameWithoutExtension(f)
+            If caminhoNovo.ContainsKey(nome) Then Continue For
+            Dim chv As String = Chave(nome)
+            If chv = "" Then Continue For
+            caminhoNovo(nome) = f
+            If Not porMedida.ContainsKey(chv) Then porMedida(chv) = New List(Of String)
+            porMedida(chv).Add(nome)
+        Next
+    Next
+
+    ' Candidatas de cada peca antiga: mesma medida, codigo 103..., da mais parecida para a menos.
+    Dim candidatas As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
+    Dim k As Integer = 0
+    For Each antiga As String In antigas
+        k += 1
+        ThisApplication.StatusBarText = "Trocar parafusos: procurando pecas novas " & k & "/" & antigas.Count
+        Dim lista As New List(Of String)
+        Dim chv As String = Chave(antiga)
+        If chv <> "" AndAlso porMedida.ContainsKey(chv) Then
+            For Each nome As String In porMedida(chv)
+                ' so o mesmo tipo de peca (ARRUELA so vira ARRUELA, PORCA so vira PORCA...)
+                If Tipo(nome) <> Tipo(antiga) Then Continue For
+                If EhNovo(Codigo(caminhoNovo(nome), codigos)) Then lista.Add(nome)
+            Next
+        End If
+        Dim a As String = antiga
+        lista.Sort(Function(x As String, y As String) Similaridade(a, y).CompareTo(Similaridade(a, x)))
+        candidatas(antiga) = lista
+    Next
+    ThisApplication.StatusBarText = ""
+    SalvarMemoria(codigos)
+
+    ' Abrir formulario.
+    If AbrirFormulario(topo, antigas, candidatas, mapa, qtd, caminhoAntigo, caminhoNovo, codigos) <> DialogResult.OK Then Return
+
+    ' Salvar cadastro aprovado.
+    SalvarMapa(arquivoCSV, mapa)
+
+    If mapa.Count = 0 Then
+        MessageBox.Show("Nenhuma peca aprovada.", "Trocar parafusos")
+        Return
+    End If
+
+    ' Executar substituicoes.
+    ExecutarSubstituicoes(topo, montagens, raiz, mapa, caminhoNovo, codigos, relatorio)
+
+End Sub
+
+' ===== Janela no padrao Sirius (faixa preta + logo + linha laranja, botoes coloridos) =====
+' Cada linha = uma peca antiga da montagem. Marcada (verde) = troca e fica no cadastro;
+' desmarcada (branca) = nao troca e sai do cadastro. Embaixo de cada nome, a pasta do arquivo.
+' PECA NOVA: clicar abre a lista das outras pecas novas da mesma medida (com codigo) para escolher.
+Function AbrirFormulario(
+    topo As AssemblyDocument,
+    antigas As List(Of String),
+    candidatas As Dictionary(Of String, List(Of String)),
+    mapa As Dictionary(Of String, String),
+    qtd As Dictionary(Of String, Integer),
+    caminhoAntigo As Dictionary(Of String, String),
+    caminhoNovo As Dictionary(Of String, String),
+    codigos As Dictionary(Of String, String)) As DialogResult
+
+    Dim laranja As System.Drawing.Color = System.Drawing.Color.FromArgb(244, 147, 6)
+    Dim fundoClaro As System.Drawing.Color = System.Drawing.Color.FromArgb(245, 247, 250)
+    Dim textoEscuro As System.Drawing.Color = System.Drawing.Color.FromArgb(40, 46, 56)
+    Dim cinza As System.Drawing.Color = System.Drawing.Color.FromArgb(120, 128, 138)
+
+    Dim f As New Form
+    f.Text = "Trocar parafusos"
+    f.Width = 1250
+    f.Height = 760
+    f.MinimumSize = New System.Drawing.Size(900, 500)
+    f.StartPosition = FormStartPosition.CenterScreen
+    f.BackColor = fundoClaro
+    f.Font = New System.Drawing.Font("Segoe UI", 9.0F)
+    Try
+        Dim ic As System.Drawing.Image = ImagemDoma("doma_d.png")
+        If ic IsNot Nothing Then f.Icon = System.Drawing.Icon.FromHandle(New System.Drawing.Bitmap(ic).GetHicon())
+    Catch
+    End Try
+
+    ' ---------- cabecalho preto ----------
+    Dim total As Integer = 0
+    For Each a As String In antigas
+        If qtd.ContainsKey(a) Then total += qtd(a)
+    Next
+
+    Dim cab As New Panel
+    cab.Dock = DockStyle.Top
+    cab.Height = 84
+    cab.BackColor = System.Drawing.Color.Black
+    Dim xT As Integer = 20
+    Dim logo As System.Drawing.Image = ImagemDoma("doma_logo.png")
+    If logo IsNot Nothing Then
+        Dim pic As New PictureBox
+        pic.SetBounds(14, 10, 180, 60)
+        pic.SizeMode = PictureBoxSizeMode.Zoom
+        pic.BackColor = System.Drawing.Color.Black
+        pic.Image = logo
+        cab.Controls.Add(pic)
+        Dim sep As New Panel
+        sep.SetBounds(206, 16, 1, 50)
+        sep.BackColor = System.Drawing.Color.FromArgb(70, 70, 74)
+        cab.Controls.Add(sep)
+        xT = 222
+    End If
+    Dim t1 As New Label
+    t1.AutoSize = False
+    t1.SetBounds(xT, 10, 900, 34)
+    t1.ForeColor = System.Drawing.Color.White
+    t1.BackColor = System.Drawing.Color.Black
+    t1.Font = New System.Drawing.Font("Segoe UI", 16.0F, System.Drawing.FontStyle.Bold)
+    t1.Text = "TROCAR PARAFUSOS"
+    cab.Controls.Add(t1)
+    Dim t2 As New Label
+    t2.AutoSize = False
+    t2.SetBounds(xT + 2, 46, 950, 22)
+    t2.ForeColor = System.Drawing.Color.FromArgb(200, 200, 204)
+    t2.BackColor = System.Drawing.Color.Black
+    t2.Font = New System.Drawing.Font("Segoe UI", 9.5F)
+    t2.Text = topo.DisplayName & "   |   " & antigas.Count & " peças antigas (" & total & " na montagem)   |   troca pela peça nova com código 103..."
+    cab.Controls.Add(t2)
+    Dim linhaLar As New Panel
+    linhaLar.Dock = DockStyle.Bottom
+    linhaLar.Height = 4
+    linhaLar.BackColor = laranja
+    cab.Controls.Add(linhaLar)
+
+    ' ---------- como usar ----------
+    Dim ajuda As New Label
+    ajuda.Dock = DockStyle.Top
+    ajuda.Height = 54
+    ajuda.Padding = New Padding(14, 8, 14, 4)
+    ajuda.ForeColor = textoEscuro
+    ajuda.Font = New System.Drawing.Font("Segoe UI", 9.5F)
+    ajuda.Text = "1. Confira a PEÇA NOVA de cada linha. Quer outra? Clique nela e escolha na lista (só peças da mesma medida, com código).     " &
+        "2. Desmarque o que NÃO quer trocar.     3. Clique em TROCAR MARCADAS." & vbCrLf &
+        "Verde = vai trocar.   Branca = não troca.   Amarela = não existe peça nova com código para essa medida (fica como está)."
+
+    ' ---------- tabela ----------
+    Dim grid As New DataGridView
+    grid.Dock = DockStyle.Fill
+    grid.AllowUserToAddRows = False
+    grid.AllowUserToDeleteRows = False
+    grid.AllowUserToResizeRows = False
+    grid.MultiSelect = True
+    grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+    grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+    grid.RowHeadersVisible = False
+    grid.BackgroundColor = System.Drawing.Color.White
+    grid.BorderStyle = BorderStyle.None
+    grid.GridColor = System.Drawing.Color.FromArgb(222, 226, 232)
+    grid.EnableHeadersVisualStyles = False
+    grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing
+    grid.ColumnHeadersHeight = 34
+    grid.ColumnHeadersDefaultCellStyle.BackColor = textoEscuro
+    grid.ColumnHeadersDefaultCellStyle.ForeColor = System.Drawing.Color.White
+    grid.ColumnHeadersDefaultCellStyle.Font = New System.Drawing.Font("Segoe UI", 9.0F, System.Drawing.FontStyle.Bold)
+    grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = textoEscuro
+    grid.RowTemplate.Height = 44
+    grid.DefaultCellStyle.SelectionForeColor = System.Drawing.Color.Black
+
+    Dim cMarca As New DataGridViewCheckBoxColumn
+    cMarca.Name = "Marca"
+    cMarca.HeaderText = "TROCAR"
+    cMarca.FillWeight = 7
+    Dim cAntiga As New DataGridViewTextBoxColumn
+    cAntiga.Name = "Antiga"
+    cAntiga.HeaderText = "PEÇA ANTIGA (na montagem)"
+    cAntiga.ReadOnly = True
+    cAntiga.FillWeight = 36
+    Dim cCodA As New DataGridViewTextBoxColumn
+    cCodA.Name = "CodA"
+    cCodA.HeaderText = "CÓD. ANTIGO"
+    cCodA.ReadOnly = True
+    cCodA.FillWeight = 9
+    cCodA.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+    cCodA.DefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(150, 60, 50)
+    Dim cNova As New DataGridViewTextBoxColumn
+    cNova.Name = "Nova"
+    cNova.HeaderText = "PEÇA NOVA   (clique para escolher outra)"
+    cNova.ReadOnly = True
+    cNova.FillWeight = 36
+    Dim cCodN As New DataGridViewTextBoxColumn
+    cCodN.Name = "CodN"
+    cCodN.HeaderText = "CÓD. NOVO"
+    cCodN.ReadOnly = True
+    cCodN.FillWeight = 9
+    cCodN.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+    cCodN.DefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(30, 120, 65)
+    cCodN.DefaultCellStyle.Font = New System.Drawing.Font("Segoe UI", 9.0F, System.Drawing.FontStyle.Bold)
+    Dim cQtd As New DataGridViewTextBoxColumn
+    cQtd.Name = "Qtd"
+    cQtd.HeaderText = "QTD"
+    cQtd.ReadOnly = True
+    cQtd.FillWeight = 5
+    cQtd.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+    grid.Columns.Add(cMarca)
+    grid.Columns.Add(cAntiga)
+    grid.Columns.Add(cCodA)
+    grid.Columns.Add(cNova)
+    grid.Columns.Add(cCodN)
+    grid.Columns.Add(cQtd)
+
+    Dim moldura As New Panel
+    moldura.Dock = DockStyle.Fill
+    moldura.Padding = New Padding(12, 0, 12, 0)
+    moldura.BackColor = fundoClaro
+    moldura.Controls.Add(grid)
+
+    ' ---------- rodape com os botoes ----------
+    Dim rod As New Panel
+    rod.Dock = DockStyle.Bottom
+    rod.Height = 64
+    rod.BackColor = fundoClaro
+    rod.Padding = New Padding(12, 12, 12, 12)
+
+    Dim esq As New FlowLayoutPanel
+    esq.Dock = DockStyle.Left
+    esq.Width = 560
+    esq.FlowDirection = FlowDirection.LeftToRight
+    esq.WrapContents = False
+    Dim btMarcar As New Button
+    btMarcar.Text = "Marcar todas"
+    btMarcar.Width = 140
+    EstilizarBotao(btMarcar, System.Drawing.Color.FromArgb(45, 145, 85))
+    Dim btDesmarcar As New Button
+    btDesmarcar.Text = "Desmarcar todas"
+    btDesmarcar.Width = 140
+    EstilizarBotao(btDesmarcar, System.Drawing.Color.FromArgb(190, 90, 80))
+    Dim contador As New Label
+    contador.AutoSize = False
+    contador.Width = 240
+    contador.Height = 38
+    contador.TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+    contador.Padding = New Padding(10, 0, 0, 0)
+    contador.ForeColor = textoEscuro
+    contador.Font = New System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold)
+    esq.Controls.Add(btMarcar)
+    esq.Controls.Add(btDesmarcar)
+    esq.Controls.Add(contador)
+
+    Dim dir As New FlowLayoutPanel
+    dir.Dock = DockStyle.Right
+    dir.Width = 380
+    dir.FlowDirection = FlowDirection.RightToLeft
+    dir.WrapContents = False
+    Dim btCancelar As New Button
+    btCancelar.Text = "Cancelar"
+    btCancelar.Width = 120
+    EstilizarBotao(btCancelar, System.Drawing.Color.FromArgb(100, 110, 120))
+    Dim btTrocar As New Button
+    btTrocar.Text = "TROCAR MARCADAS"
+    btTrocar.Width = 210
+    EstilizarBotao(btTrocar, System.Drawing.Color.FromArgb(40, 120, 215))
+    dir.Controls.Add(btCancelar)
+    dir.Controls.Add(btTrocar)
+
+    rod.Controls.Add(esq)
+    rod.Controls.Add(dir)
+
+    f.Controls.Add(moldura)
+    f.Controls.Add(rod)
+    f.Controls.Add(ajuda)
+    f.Controls.Add(cab)
+    f.CancelButton = btCancelar
+
+    ' ---------- linhas ----------
+    Dim carregando As Boolean = True
+    For Each antiga As String In antigas
+        Dim lista As List(Of String) = candidatas(antiga)
+        Dim sugestao As String = ""
+        If mapa.ContainsKey(antiga) AndAlso lista.Contains(mapa(antiga)) Then
+            sugestao = mapa(antiga)
+        ElseIf lista.Count > 0 Then
+            sugestao = lista(0)
+        End If
+
+        Dim i As Integer = grid.Rows.Add()
+        Dim r As DataGridViewRow = grid.Rows(i)
+        r.Cells("Antiga").Value = antiga
+        r.Cells("Qtd").Value = If(qtd.ContainsKey(antiga), qtd(antiga), 0)
+        ' codigo antigo: arquivo que nao existe mais nao tem como ler
+        Dim codA As String = "-"
+        If caminhoAntigo.ContainsKey(antiga) Then
+            If IOFile.Exists(caminhoAntigo(antiga)) Then
+                codA = Codigo(caminhoAntigo(antiga), codigos)
+                If codA = "" Then codA = "(sem código)"
+            Else
+                codA = "(sem arquivo)"
+            End If
+        End If
+        r.Cells("CodA").Value = codA
+        If lista.Count = 0 Then
+            r.Cells("Nova").Value = ""
+            r.Cells("CodN").Value = "-"
+            r.Cells("Marca").Value = False
+            r.ReadOnly = True
+        Else
+            r.Cells("Nova").Value = sugestao
+            r.Cells("CodN").Value = Codigo(caminhoNovo(sugestao), codigos)
+            r.Cells("Marca").Value = True
+        End If
+        ColorirLinha(r)
+    Next
+    carregando = False
+
+    Dim atualizarContador As Action =
+        Sub()
+            Dim m As Integer = 0
+            For Each r As DataGridViewRow In grid.Rows
+                If CBool(If(r.Cells("Marca").Value, False)) Then m += 1
+            Next
+            contador.Text = m & " de " & grid.Rows.Count & " marcadas"
+        End Sub
+    atualizarContador()
+
+    ' ---------- desenho das celulas: nome em cima, pasta embaixo (menor, cinza) ----------
+    Dim fonteNome As New System.Drawing.Font("Segoe UI", 9.0F)
+    Dim fontePasta As New System.Drawing.Font("Segoe UI", 7.5F)
+    Dim fonteSeta As New System.Drawing.Font("Segoe UI", 8.0F, System.Drawing.FontStyle.Bold)
+    AddHandler grid.CellPainting,
+        Sub(sender As Object, e As DataGridViewCellPaintingEventArgs)
+            If e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then Return
+            Dim coluna As String = grid.Columns(e.ColumnIndex).Name
+            If coluna <> "Antiga" AndAlso coluna <> "Nova" Then Return
+            Dim r As DataGridViewRow = grid.Rows(e.RowIndex)
+            e.PaintBackground(e.ClipBounds, r.Selected)
+            Dim nome As String = Convert.ToString(e.Value)
+            Dim pasta As String = ""
+            Dim b As System.Drawing.Rectangle = e.CellBounds
+            Dim larguraTexto As Integer = b.Width - 12
+            Dim corNome As System.Drawing.Color = textoEscuro
+
+            If coluna = "Antiga" Then
+                If caminhoAntigo.ContainsKey(nome) Then pasta = IOPath.GetDirectoryName(caminhoAntigo(nome))
+            Else
+                If r.ReadOnly Then
+                    nome = "(não existe peça nova com código para esta medida)"
+                    corNome = System.Drawing.Color.FromArgb(140, 110, 30)
+                Else
+                    If caminhoNovo.ContainsKey(nome) Then pasta = IOPath.GetDirectoryName(caminhoNovo(nome))
+                    ' caixa branca com seta: deixa claro que da para clicar e escolher outra
+                    Dim caixa As New System.Drawing.Rectangle(b.X + 3, b.Y + 3, b.Width - 7, b.Height - 7)
+                    e.Graphics.FillRectangle(System.Drawing.Brushes.White, caixa)
+                    Using caneta As New System.Drawing.Pen(System.Drawing.Color.FromArgb(40, 120, 215))
+                        e.Graphics.DrawRectangle(caneta, caixa)
+                    End Using
+                    Dim nOpcoes As Integer = candidatas(Convert.ToString(r.Cells("Antiga").Value)).Count
+                    Dim seta As String = If(nOpcoes > 1, "▼ " & nOpcoes & " opções", "▼")
+                    Dim tamSeta As System.Drawing.Size = TextRenderer.MeasureText(seta, fonteSeta)
+                    TextRenderer.DrawText(e.Graphics, seta, fonteSeta,
+                        New System.Drawing.Point(caixa.Right - tamSeta.Width - 4, caixa.Y + (caixa.Height - tamSeta.Height) \ 2),
+                        System.Drawing.Color.FromArgb(40, 120, 215))
+                    larguraTexto = b.Width - tamSeta.Width - 20
+                End If
+            End If
+
+            TextRenderer.DrawText(e.Graphics, nome, fonteNome,
+                New System.Drawing.Rectangle(b.X + 7, b.Y + 5, larguraTexto, 18), corNome,
+                TextFormatFlags.Left Or TextFormatFlags.EndEllipsis Or TextFormatFlags.NoPrefix)
+            If pasta <> "" Then
+                TextRenderer.DrawText(e.Graphics, pasta, fontePasta,
+                    New System.Drawing.Rectangle(b.X + 7, b.Y + 23, larguraTexto, 16), cinza,
+                    TextFormatFlags.Left Or TextFormatFlags.PathEllipsis Or TextFormatFlags.NoPrefix)
+            End If
+            ' linha de grade embaixo
+            Using caneta As New System.Drawing.Pen(grid.GridColor)
+                e.Graphics.DrawLine(caneta, b.Left, b.Bottom - 1, b.Right, b.Bottom - 1)
+            End Using
+            e.Handled = True
+        End Sub
+
+    ' ---------- lista para escolher outra peca nova (fundo branco, pasta ao lado) ----------
+    AddHandler grid.CellClick,
+        Sub(sender As Object, e As DataGridViewCellEventArgs)
+            If e.RowIndex < 0 OrElse e.ColumnIndex <> grid.Columns("Nova").Index Then Return
+            Dim r As DataGridViewRow = grid.Rows(e.RowIndex)
+            If r.ReadOnly Then Return
+            Dim antiga As String = Convert.ToString(r.Cells("Antiga").Value)
+            Dim atual As String = Convert.ToString(r.Cells("Nova").Value)
+            Dim menu As New ContextMenuStrip
+            menu.ShowImageMargin = False
+            menu.ShowCheckMargin = True
+            menu.BackColor = System.Drawing.Color.White
+            menu.Font = New System.Drawing.Font("Segoe UI", 9.5F)
+            For Each n As String In candidatas(antiga)
+                Dim nomeItem As String = n
+                Dim pastaItem As String = ""
+                If caminhoNovo.ContainsKey(n) Then pastaItem = IOPath.GetFileName(IOPath.GetDirectoryName(caminhoNovo(n)))
+                Dim codItem As String = ""
+                If caminhoNovo.ContainsKey(n) Then codItem = Codigo(caminhoNovo(n), codigos)
+                Dim it As New ToolStripMenuItem(n & "      cód. " & codItem & "      (pasta " & pastaItem & ")")
+                it.Checked = String.Equals(n, atual, StringComparison.OrdinalIgnoreCase)
+                If it.Checked Then it.Font = New System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold)
+                AddHandler it.Click,
+                    Sub()
+                        r.Cells("Nova").Value = nomeItem
+                        r.Cells("CodN").Value = Codigo(caminhoNovo(nomeItem), codigos)
+                        r.Cells("Marca").Value = True
+                        ColorirLinha(r)
+                        grid.InvalidateRow(r.Index)
+                        atualizarContador()
+                    End Sub
+                menu.Items.Add(it)
+            Next
+            Dim ret As System.Drawing.Rectangle = grid.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, False)
+            menu.Show(grid, New System.Drawing.Point(ret.Left, ret.Bottom))
+        End Sub
+
+    AddHandler grid.CurrentCellDirtyStateChanged,
+        Sub(sender As Object, e As EventArgs)
+            If grid.IsCurrentCellDirty Then grid.CommitEdit(DataGridViewDataErrorContexts.Commit)
+        End Sub
+
+    AddHandler grid.CellValueChanged,
+        Sub(sender As Object, e As DataGridViewCellEventArgs)
+            If carregando OrElse e.RowIndex < 0 Then Return
+            ColorirLinha(grid.Rows(e.RowIndex))
+            atualizarContador()
+        End Sub
+
+    ' Espaco com varias linhas selecionadas = marca/desmarca todas elas
+    AddHandler grid.KeyDown,
+        Sub(sender As Object, e As KeyEventArgs)
+            If e.KeyCode <> Keys.Space OrElse grid.SelectedRows.Count < 2 Then Return
+            Dim valor As Boolean = Not CBool(If(grid.SelectedRows(0).Cells("Marca").Value, False))
+            For Each r As DataGridViewRow In grid.SelectedRows
+                If Not r.ReadOnly Then
+                    r.Cells("Marca").Value = valor
+                    ColorirLinha(r)
+                End If
+            Next
+            e.Handled = True
+            atualizarContador()
+        End Sub
+
+    AddHandler btMarcar.Click,
+        Sub(sender As Object, e As EventArgs)
+            grid.EndEdit()
+            For Each r As DataGridViewRow In grid.Rows
+                If Not r.ReadOnly Then
+                    r.Cells("Marca").Value = True
+                    ColorirLinha(r)
+                End If
+            Next
+            atualizarContador()
+        End Sub
+
+    AddHandler btDesmarcar.Click,
+        Sub(sender As Object, e As EventArgs)
+            grid.EndEdit()
+            For Each r As DataGridViewRow In grid.Rows
+                If Not r.ReadOnly Then
+                    r.Cells("Marca").Value = False
+                    ColorirLinha(r)
+                End If
+            Next
+            atualizarContador()
+        End Sub
+
+    AddHandler btTrocar.Click,
+        Sub(sender As Object, e As EventArgs)
+            grid.EndEdit()
+            Dim marcadas As Integer = 0
+            For Each r As DataGridViewRow In grid.Rows
+                Dim antiga As String = Convert.ToString(r.Cells("Antiga").Value)
+                Dim nova As String = Convert.ToString(r.Cells("Nova").Value).Trim()
+                Dim marcada As Boolean = CBool(If(r.Cells("Marca").Value, False))
+                If marcada AndAlso nova <> "" AndAlso candidatas(antiga).Contains(nova) Then
+                    mapa(antiga) = nova
+                    marcadas += 1
+                ElseIf mapa.ContainsKey(antiga) Then
+                    mapa.Remove(antiga)
+                End If
+            Next
+            If marcadas = 0 Then
+                MessageBox.Show("Nenhuma linha marcada.", "Trocar parafusos")
+                Return
+            End If
+            f.DialogResult = DialogResult.OK
+            f.Close()
+        End Sub
+
+    AddHandler btCancelar.Click,
+        Sub(sender As Object, e As EventArgs)
+            f.DialogResult = DialogResult.Cancel
+            f.Close()
+        End Sub
+
+    AddHandler grid.DataError,
+        Sub(sender As Object, e As DataGridViewDataErrorEventArgs)
+            e.ThrowException = False
+        End Sub
+
+    Return f.ShowDialog()
+
+End Function
+
+' Verde = marcada (vai trocar); branca = nao troca; amarela = nao tem peca nova
+Sub ColorirLinha(r As DataGridViewRow)
+    Dim fundo As System.Drawing.Color
+    Dim selecao As System.Drawing.Color
+    If r.ReadOnly Then
+        fundo = System.Drawing.Color.FromArgb(255, 243, 205)
+        selecao = System.Drawing.Color.FromArgb(245, 228, 175)
+    ElseIf CBool(If(r.Cells("Marca").Value, False)) Then
+        fundo = System.Drawing.Color.FromArgb(218, 242, 225)
+        selecao = System.Drawing.Color.FromArgb(190, 228, 202)
+    Else
+        fundo = System.Drawing.Color.White
+        selecao = System.Drawing.Color.FromArgb(228, 236, 246)
+    End If
+    r.DefaultCellStyle.BackColor = fundo
+    r.DefaultCellStyle.SelectionBackColor = selecao
+End Sub
+
+' Botao no padrao Sirius
+Sub EstilizarBotao(b As Button, cor As System.Drawing.Color)
+    b.BackColor = cor
+    b.ForeColor = System.Drawing.Color.White
+    b.FlatStyle = FlatStyle.Flat
+    b.FlatAppearance.BorderSize = 0
+    b.Font = New System.Drawing.Font("Segoe UI", 9.0F, System.Drawing.FontStyle.Bold)
+    b.Height = 38
+    b.Margin = New Padding(4)
+    b.Cursor = Cursors.Hand
+End Sub
+
+' Logo/icone DOMA da pasta de icones do Nathan (Sirius no P: ou servidor); sem achar = sem logo
+Function ImagemDoma(nome As String) As System.Drawing.Image
+    Dim pastas() As String = {
+        "P:\1 - PADRÃO DOMA\02 - IMPORTAÇÃO\SIRIUS PLUGIN\PLUGIN SIRIUS\NATHAN\icones",
+        "\\ligasto\Projetos\1 - PADRÃO DOMA\02 - IMPORTAÇÃO\SIRIUS PLUGIN\PLUGIN SIRIUS\NATHAN\icones",
+        "\\ligasto\Doma\Doma Projetos\X - USUARIOS\NATHAN\0001-CLAUDE\PLUGIN\icones"}
+    For Each p As String In pastas
+        Try
+            Dim a As String = IOPath.Combine(p, nome)
+            If IOFile.Exists(a) Then
+                Return System.Drawing.Image.FromStream(New MemoryStream(IOFile.ReadAllBytes(a)))
+            End If
+        Catch
+        End Try
+    Next
+    Return Nothing
+End Function
+
+' ===== Substituicoes: so as pecas aprovadas =====
+Sub ExecutarSubstituicoes(
+    topo As AssemblyDocument,
+    montagens As List(Of AssemblyDocument),
+    raiz As String,
+    mapa As Dictionary(Of String, String),
+    caminhoNovo As Dictionary(Of String, String),
+    codigos As Dictionary(Of String, String),
+    relatorio As List(Of String))
+
+    Dim trocados As Integer = 0, falhas As Integer = 0
+    Dim silencioso As Boolean = ThisApplication.SilentOperation
+    ThisApplication.SilentOperation = True
+    Dim tr As Transaction = Nothing
+    Try
+        tr = ThisApplication.TransactionManager.StartTransaction(topo, "Trocar parafusos antigos")
+    Catch
+    End Try
+
+    Try
+        Dim n As Integer = 0
+        For Each asm As AssemblyDocument In montagens
+            n += 1
+            ThisApplication.StatusBarText = "Trocar parafusos: " & n & "/" & montagens.Count & " - " & asm.DisplayName
+            Dim lista As New List(Of ComponentOccurrence)
+            For Each oc As ComponentOccurrence In asm.ComponentDefinition.Occurrences
+                lista.Add(oc)
+            Next
+            For Each oc As ComponentOccurrence In lista
+                Dim antigo As String = ""
+                Dim faltando As Boolean
+                Try
+                    faltando = oc.ReferencedDocumentDescriptor.ReferenceMissing
+                    antigo = oc.ReferencedDocumentDescriptor.FullDocumentName
+                Catch
+                    Continue For
+                End Try
+                If Not antigo.ToLower().EndsWith(".ipt") Then Continue For
+                If Not DentroDaBiblioteca(antigo, raiz) Then Continue For
+                If Not faltando AndAlso EhNovo(Codigo(antigo, codigos)) Then Continue For
+
+                Dim nomeAntigo As String = IOPath.GetFileNameWithoutExtension(antigo)
+                Dim curto As String = IOPath.GetFileName(IOPath.GetDirectoryName(antigo)) & "\" & IOPath.GetFileName(antigo)
+                If Not mapa.ContainsKey(nomeAntigo) OrElse Not caminhoNovo.ContainsKey(mapa(nomeAntigo)) Then
+                    falhas += 1
+                    relatorio.Add("NAO TROCOU  " & curto & "  (nao aprovada)  em " & asm.FullFileName)
+                    Continue For
+                End If
+                Dim novo As String = caminhoNovo(mapa(nomeAntigo))
+
+                ' 1o: troca a referencia do arquivo (funciona tambem dentro do Design Accelerator,
+                '     onde o Substituir nao da erro mas nao troca). 2o: Substituir normal. Sempre confere.
+                Dim erro As String = ""
+                Try
+                    oc.ReferencedDocumentDescriptor.ReferencedFileDescriptor.ReplaceReference(novo)
+                Catch ex1 As Exception
+                    erro = ex1.Message
+                End Try
+                If Not Trocou(oc, novo) Then
+                    Try
+                        oc.Replace(novo, True)
+                    Catch ex2 As Exception
+                        erro = ex2.Message
+                    End Try
+                End If
+                If Not Trocou(oc, novo) Then
+                    falhas += 1
+                    relatorio.Add("ERRO  " & curto & "  ->  " & IOPath.GetFileName(novo) & "  (" & erro & ")  em " & asm.FullFileName)
+                Else
+                    trocados += 1
+                    relatorio.Add("ok  " & curto & "  ->  " & IOPath.GetFileName(novo) & "  (cod " & Codigo(novo, codigos) & ")  em " & asm.FullFileName)
+                End If
+            Next
+        Next
+        If tr IsNot Nothing Then tr.End()
+    Catch ex As Exception
+        If tr IsNot Nothing Then tr.Abort()
+        MessageBox.Show("Parou com erro: " & ex.Message, "Trocar parafusos")
+    Finally
+        ThisApplication.SilentOperation = silencioso
+        ThisApplication.StatusBarText = ""
+    End Try
+
+    Try : topo.Update() : Catch : End Try
+
+    ' relatorio em arquivo, ao lado da montagem
+    Dim arq As String = ""
+    Try
+        arq = IOPath.Combine(IOPath.GetDirectoryName(topo.FullFileName), "Troca de parafusos - relatorio.txt")
+        IOFile.WriteAllLines(arq, relatorio.ToArray(), Encoding.UTF8)
+    Catch
+        arq = ""
+    End Try
+
+    Dim msg As String = "Trocados: " & trocados & vbCrLf & "Sem trocar: " & falhas & vbCrLf & vbCrLf
+    If trocados + falhas = 0 Then msg = "Nenhum parafuso para trocar." & vbCrLf & vbCrLf
+    Dim mostrados As Integer = 0
+    For Each l As String In relatorio
+        If Not l.StartsWith("ok") AndAlso mostrados < 20 Then
+            msg &= l & vbCrLf
+            mostrados += 1
+        End If
+    Next
+    If arq <> "" Then msg &= vbCrLf & "Lista completa: " & arq & vbCrLf
+    msg &= vbCrLf & "Nada foi salvo. Confira e salve; se nao gostar, feche sem salvar."
+    MessageBox.Show(msg, "Trocar parafusos")
+End Sub
+
+' Peca da biblioteca: dentro da pasta pt-BR (resolvida) ou caminho guardado com \pt-BR\ (faltando)
+Function DentroDaBiblioteca(arq As String, raiz As String) As Boolean
+    If arq.StartsWith(raiz & "\", StringComparison.OrdinalIgnoreCase) Then Return True
+    Return arq.IndexOf("\pt-BR\", StringComparison.OrdinalIgnoreCase) >= 0
+End Function
+
+' Cadastro aprovado: linhas "nome antigo;nome novo" (UTF-8). Arquivo que nao existe = cadastro vazio.
+Sub CarregarMapa(arquivo As String, mapa As Dictionary(Of String, String))
+    Try
+        If Not IOFile.Exists(arquivo) Then Return
+        For Each linha As String In IOFile.ReadAllLines(arquivo, Encoding.UTF8)
+            Dim c() As String = linha.Split(";"c)
+            If c.Length < 2 Then Continue For
+            Dim a As String = c(0).Trim().Trim(""""c).Trim(), n As String = c(1).Trim().Trim(""""c).Trim()
+            If a = "" OrElse n = "" Then Continue For
+            If a.ToUpper().StartsWith("ANTIG") OrElse a.ToUpper() = "NOME ANTIGO" Then Continue For
+            mapa(a) = n
+        Next
+    Catch
+    End Try
+End Sub
+
+Sub SalvarMapa(arquivo As String, mapa As Dictionary(Of String, String))
+    ' junta com o que ja estava no arquivo (outra montagem pode ter aprovado outras pecas)
+    Dim tudo As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+    CarregarMapa(arquivo, tudo)
+    For Each par As KeyValuePair(Of String, String) In mapa
+        tudo(par.Key) = par.Value
+    Next
+    Dim linhas As New List(Of String)
+    linhas.Add("ANTIGO;NOVO")
+    For Each par As KeyValuePair(Of String, String) In tudo
+        linhas.Add(par.Key & ";" & par.Value)
+    Next
+    Try
+        IOFile.WriteAllLines(arquivo, linhas.ToArray(), Encoding.UTF8)
+    Catch ex As Exception
+        MessageBox.Show("Nao consegui salvar o cadastro em:" & vbCrLf & arquivo & vbCrLf & ex.Message &
+            vbCrLf & vbCrLf & "A troca continua, mas o cadastro nao fica guardado.", "Trocar parafusos")
+    End Try
+End Sub
+
+' Indice de similaridade (0 a 1) entre o nome antigo e o novo: palavras em comum / palavras no total
+' (sem acento, sem a medida, sem LIGA). Ex.: "PARAFUSO SEXTAVADO INOX - M10 x 60" x
+' "PARAFUSO SEXTAVADO - DIN 933 - INOX - M10 x 60" = 3/5.
+Function Similaridade(antigo As String, novo As String) As Double
+    Dim a As List(Of String) = Palavras(antigo)
+    Dim b As List(Of String) = Palavras(novo)
+    If a.Count = 0 OrElse b.Count = 0 Then Return 0
+    Dim comum As Integer = 0
+    For Each w As String In a
+        If b.Contains(w) Then comum += 1
+    Next
+    Return comum / CDbl(a.Count + b.Count - comum)
+End Function
+
+' Tipo da peca = primeira palavra do nome, sem acento (ARRUELA, PORCA, PARAFUSO, BARRA...)
+Function Tipo(nome As String) As String
+    Dim p As List(Of String) = Palavras(nome)
+    If p.Count = 0 Then Return ""
+    Return p(0)
+End Function
+
+Function Palavras(nome As String) As List(Of String)
+    Dim s As String = nome.ToUpper().Replace(ChrW(215), "X").Normalize(NormalizationForm.FormD)
+    ' tira a medida (M10 x 60, M10, 10 N)
+    s = Regex.Replace(s, "M\s*\d+(?:[.,]\d+)?(?:\s*X\s*\d+(?:[.,]\d+)?)?", " ")
+    s = Regex.Replace(s, "-\s*\d+(?:[.,]\d+)?\s*N\s*$", " ")
+    Dim sb As New StringBuilder
+    For Each ch As Char In s
+        If Char.IsLetterOrDigit(ch) AndAlso ch < ChrW(128) Then
+            sb.Append(ch)
+        ElseIf ch < ChrW(128) Then
+            sb.Append(" "c)
+        End If
+    Next
+    Dim lista As New List(Of String)
+    For Each w As String In sb.ToString().Split(New Char() {" "c}, StringSplitOptions.RemoveEmptyEntries)
+        If w <> "LIGA" AndAlso Not lista.Contains(w) Then lista.Add(w)
+    Next
+    Return lista
+End Function
+
+Function Trocou(oc As ComponentOccurrence, novo As String) As Boolean
+    Try
+        Dim dd As DocumentDescriptor = oc.ReferencedDocumentDescriptor
+        Return Not dd.ReferenceMissing AndAlso String.Equals(dd.FullDocumentName, novo, StringComparison.OrdinalIgnoreCase)
+    Catch
+        Return False
+    End Try
+End Function
+
+' Codigo do padrao novo do Consistem: 10 digitos comecando com 103 (ex. 1030011292)
+Function EhNovo(cod As String) As Boolean
+    Return Regex.IsMatch(If(cod, ""), "^103\d{7}$")
+End Function
+
+' Pasta pt-BR do Centro de Conteudo (do projeto ativo ou a padrao do P:)
+Function AcharPtBR() As String
+    Dim cands As New List(Of String)
+    Try
+        cands.Add(ThisApplication.DesignProjectManager.ActiveDesignProject.ContentCenterPath)
+    Catch
+    End Try
+    cands.Add("P:\1 - BIBLIOTECA - LIGA - 3D\CENTRO DE CONTEUDO INVENTOR")
+    For Each c As String In cands
+        If String.IsNullOrEmpty(c) Then Continue For
+        If IODir.Exists(IOPath.Combine(c, "pt-BR")) Then Return IOPath.Combine(c, "pt-BR")
+        If c.TrimEnd("\"c).ToLower().EndsWith("pt-br") AndAlso IODir.Exists(c) Then Return c.TrimEnd("\"c)
+    Next
+    Return ""
+End Function
+
+' Codigo do Consistem da peca (iProperty Centro de custos). "" = sem codigo.
+' Memoria dos codigos no PC (%APPDATA%\TrocarParafusos\codigos.txt): "arquivo|data do arquivo|codigo".
+' Fica no dicionario com chave "@arquivo". Assim so abre de novo a peca cujo arquivo mudou.
+Function ArquivoMemoria() As String
+    Return IOPath.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),"TrocarParafusos\codigos.txt")
+End Function
+
+Sub CarregarMemoria(codigos As Dictionary(Of String, String))
+    Try
+        Dim m As String = ArquivoMemoria()
+        If Not IOFile.Exists(m) Then Return
+        For Each linha As String In IOFile.ReadAllLines(m, Encoding.UTF8)
+            Dim c() As String = linha.Split("|"c)
+            If c.Length = 3 Then codigos("@" & c(0)) = c(1) & "|" & c(2)
+        Next
+    Catch
+    End Try
+End Sub
+
+Sub SalvarMemoria(codigos As Dictionary(Of String, String))
+    Try
+        Dim linhas As New List(Of String)
+        For Each par As KeyValuePair(Of String, String) In codigos
+            If par.Key.StartsWith("@") Then linhas.Add(par.Key.Substring(1) & "|" & par.Value)
+        Next
+        Dim m As String = ArquivoMemoria()
+        IODir.CreateDirectory(IOPath.GetDirectoryName(m))
+        IOFile.WriteAllLines(m, linhas.ToArray(), Encoding.UTF8)
+    Catch
+    End Try
+End Sub
+
+Function Codigo(arq As String, codigos As Dictionary(Of String, String)) As String
+    If codigos.ContainsKey(arq) Then Return codigos(arq)
+    Dim data As String = ""
+    Try
+        If IOFile.Exists(arq) Then data = IOFile.GetLastWriteTimeUtc(arq).Ticks.ToString()
+    Catch
+    End Try
+    If data <> "" AndAlso codigos.ContainsKey("@" & arq) Then
+        Dim v() As String = codigos("@" & arq).Split("|"c)
+        If v.Length = 2 AndAlso v(0) = data Then
+            codigos(arq) = v(1)
+            Return v(1)
+        End If
+    End If
+    Dim lido As Boolean = False
+    Dim c As String = ""
+    Dim doc As Document = Nothing
+    Dim jaAberto As Boolean = False
+    Try
+        For Each d As Document In ThisApplication.Documents
+            If String.Equals(d.FullFileName, arq, StringComparison.OrdinalIgnoreCase) Then
+                doc = d
+                jaAberto = True
+                Exit For
+            End If
+        Next
+        If doc Is Nothing Then doc = ThisApplication.Documents.Open(arq, False)
+        c = CStr(doc.PropertySets.Item("Design Tracking Properties").Item("Cost Center").Value).Trim()
+        lido = True
+    Catch
+        c = ""
+    End Try
+    Try
+        If doc IsNot Nothing AndAlso Not jaAberto AndAlso doc.ReferencingDocuments.Count = 0 Then doc.Close(True)
+    Catch
+    End Try
+    codigos(arq) = c
+    If lido AndAlso data <> "" Then codigos("@" & arq) = data & "|" & c.Replace("|", "")
+    Return c
+End Function
+
+' Medida do nome: "PARAFUSO SEXTAVADO INOX - M6 x 16" -> "M6X16"; "ARRUELA ... - M10" -> "M10"
+Function Chave(nome As String) As String
+    Dim s As String = nome.ToUpper().Replace(".IPT", "").Replace(ChrW(215), "X").Replace(" ", "")
+    Dim ms As MatchCollection = Regex.Matches(s, "M(\d+(?:[.,]\d+)?)(?:X(\d+(?:[.,]\d+)?))?")
+    If ms.Count = 0 Then
+        ' arruela antiga "ARRUELA LISA - 10 N" = M10
+        Dim mn As Match = Regex.Match(s, "-(\d+(?:[.,]\d+)?)N$")
+        If mn.Success Then Return "M" & mn.Groups(1).Value.Replace(",", ".")
+        Return ""
+    End If
+    Return ms(ms.Count - 1).Value.Replace(",", ".")
+End Function
