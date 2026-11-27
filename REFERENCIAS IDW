@@ -1,0 +1,450 @@
+
+' ============================================================
+' RECUPERAR REFERENCIAS DE DESENHOS IDW
+' AUTODESK INVENTOR 2020
+'
+' BASE: SOLUCAO PUBLICADA NA COMUNIDADE AUTODESK
+'
+' LOCALIZA IPT E IAM NO WORKSPACE E SUBPASTAS
+' SUBSTITUI REFERENCIAS NAO RESOLVIDAS
+' PROCESSA REFERENCIAS INTERNAS DAS MONTAGENS
+' GERA RELATORIO TXT
+' NAO SALVA AUTOMATICAMENTE
+' ============================================================
+
+Imports System
+Imports System.IO
+Imports System.Collections.Generic
+Imports System.Text
+
+Sub Main()
+
+    If ThisApplication.ActiveDocumentType <> _
+        DocumentTypeEnum.kDrawingDocumentObject Then
+
+        MessageBox.Show("Abra um arquivo IDW.", _
+            "Recuperar referencias")
+
+        Return
+    End If
+
+    Dim desenho As DrawingDocument = ThisApplication.ActiveDocument
+
+    Dim workspace As String = ""
+
+    Try
+        workspace = ThisApplication.DesignProjectManager. _
+            ActiveDesignProject.WorkspacePath
+    Catch
+    End Try
+
+    If String.IsNullOrWhiteSpace(workspace) OrElse _
+        Not Directory.Exists(workspace) Then
+
+        MessageBox.Show( _
+            "Nao foi possivel identificar o Workspace do projeto ativo." & _
+            vbCrLf & "Configure o projeto IPJ e tente novamente.", _
+            "Recuperar referencias")
+
+        Return
+    End If
+
+    Dim relatorio As New List(Of String)
+
+    Dim visitados As New HashSet(Of String)( _
+        StringComparer.OrdinalIgnoreCase)
+
+    Dim resolvidas As Integer = 0
+    Dim naoEncontradas As Integer = 0
+    Dim ambiguas As Integer = 0
+    Dim falhas As Integer = 0
+    Dim examinadas As Integer = 0
+
+    relatorio.Add("RECUPERACAO DE REFERENCIAS IDW")
+    relatorio.Add("DESENHO: " & desenho.FullFileName)
+    relatorio.Add("WORKSPACE: " & workspace)
+    relatorio.Add("DATA: " & DateTime.Now.ToString())
+    relatorio.Add("----------------------------------------")
+
+    ' Processar o IDW e suas referencias
+    ProcessarDocumento( _
+        desenho, workspace, visitados, relatorio, _
+        resolvidas, naoEncontradas, ambiguas, falhas, examinadas)
+
+    ' Atualizar desenho
+    Try
+        desenho.Update2(True)
+    Catch ex As Exception
+        relatorio.Add("ERRO NA ATUALIZACAO: " & ex.Message)
+    End Try
+
+    ' Conferencia final
+    Dim pendentes As Integer = 0
+
+    Try
+        For Each dd As DocumentDescriptor In _
+            desenho.ReferencedDocumentDescriptors
+
+            If dd.ReferenceMissing AndAlso _
+                Not dd.ReferenceSuppressed Then
+
+                pendentes += 1
+
+            End If
+
+        Next
+    Catch
+    End Try
+
+    relatorio.Add("----------------------------------------")
+    relatorio.Add("RESULTADO FINAL")
+    relatorio.Add("Referencias examinadas: " & examinadas)
+    relatorio.Add("Referencias recuperadas: " & resolvidas)
+    relatorio.Add("Nao encontradas: " & naoEncontradas)
+    relatorio.Add("Com nomes duplicados: " & ambiguas)
+    relatorio.Add("Falhas na substituicao: " & falhas)
+    relatorio.Add("Pendentes diretas no IDW: " & pendentes)
+    relatorio.Add("----------------------------------------")
+    relatorio.Add("O IDW NAO FOI SALVO AUTOMATICAMENTE.")
+
+    ' Salvar relatorio
+    Dim arquivoRelatorio As String = ""
+
+    Try
+
+        arquivoRelatorio = Path.Combine( _
+            Path.GetDirectoryName(desenho.FullFileName), _
+            "Relatorio - Recuperacao IDW.txt")
+
+        File.WriteAllLines( _
+            arquivoRelatorio, relatorio.ToArray(), Encoding.UTF8)
+
+    Catch
+        arquivoRelatorio = "Nao foi possivel salvar o relatorio."
+    End Try
+
+    Dim mensagem As String = _
+        "PROCESSO CONCLUIDO" & vbCrLf & vbCrLf & _
+        "Referencias examinadas: " & examinadas & vbCrLf & _
+        "Recuperadas: " & resolvidas & vbCrLf & _
+        "Nao encontradas: " & naoEncontradas & vbCrLf & _
+        "Duplicadas: " & ambiguas & vbCrLf & _
+        "Falhas: " & falhas & vbCrLf & vbCrLf & _
+        "Pendentes diretas no IDW: " & pendentes & vbCrLf & vbCrLf & _
+        "Relatorio: " & arquivoRelatorio & vbCrLf & vbCrLf & _
+        "Confira o desenho antes de salvar."
+
+    MessageBox.Show(mensagem, "Recuperacao IDW")
+
+End Sub
+
+
+' ============================================================
+' PROCESSAR DOCUMENTO E SUAS REFERENCIAS
+' ============================================================
+
+Sub ProcessarDocumento( _
+    documento As Document, _
+    workspace As String, _
+    visitados As HashSet(Of String), _
+    relatorio As List(Of String), _
+    ByRef resolvidas As Integer, _
+    ByRef naoEncontradas As Integer, _
+    ByRef ambiguas As Integer, _
+    ByRef falhas As Integer, _
+    ByRef examinadas As Integer)
+
+    Dim chaveDoc As String = ""
+
+    Try
+        chaveDoc = documento.FullFileName
+    Catch
+        Return
+    End Try
+
+    If chaveDoc = "" Then Return
+    If visitados.Contains(chaveDoc) Then Return
+
+    visitados.Add(chaveDoc)
+
+    ' Copiar descritores antes de substituir referencias
+    Dim lista As New List(Of DocumentDescriptor)
+
+    Try
+
+        For Each dd As DocumentDescriptor In _
+            documento.ReferencedDocumentDescriptors
+
+            lista.Add(dd)
+
+        Next
+
+    Catch ex As Exception
+
+        relatorio.Add("ERRO AO LER: " & chaveDoc & _
+            " | " & ex.Message)
+
+        Return
+
+    End Try
+
+    For Each dd As DocumentDescriptor In lista
+
+        Dim nomeAntigo As String = ""
+
+        Try
+            nomeAntigo = dd.FullDocumentName
+        Catch
+        End Try
+
+        Dim faltando As Boolean = False
+        Dim suprimida As Boolean = False
+
+        Try
+            faltando = dd.ReferenceMissing
+            suprimida = dd.ReferenceSuppressed
+        Catch
+            Continue For
+        End Try
+
+        If suprimida Then Continue For
+
+        If faltando Then
+
+            Dim extensao As String = ""
+
+            Try
+                extensao = Path.GetExtension(nomeAntigo).ToLower()
+            Catch
+            End Try
+
+            ' Somente IPT e IAM
+            If extensao <> ".ipt" AndAlso _
+                extensao <> ".iam" Then Continue For
+
+            examinadas += 1
+
+            Dim encontrado As String = ""
+            Dim motivo As String = ""
+
+            encontrado = LocalizarArquivo( _
+                documento, nomeAntigo, workspace, motivo)
+
+            If encontrado = "" Then
+
+                If motivo = "AMBIGUA" Then
+
+                    ambiguas += 1
+
+                    relatorio.Add( _
+                        "AMBIGUA: " & nomeAntigo & _
+                        " | Documento pai: " & chaveDoc)
+
+                Else
+
+                    naoEncontradas += 1
+
+                    relatorio.Add( _
+                        "NAO ENCONTRADA: " & nomeAntigo & _
+                        " | Documento pai: " & chaveDoc)
+
+                End If
+
+                Continue For
+
+            End If
+
+            ' Substituir referencia pelo arquivo localizado
+            Try
+
+                Dim docNovo As Document = Nothing
+
+                Try
+                    docNovo = ThisApplication.Documents.Open( _
+                        encontrado, False)
+                Catch exOpen As Exception
+                    relatorio.Add( _
+                        "ERRO AO ABRIR: " & encontrado & _
+                        " | " & exOpen.Message)
+
+                    falhas += 1
+                    Continue For
+                End Try
+
+                Try
+
+                    dd.ReferencedFileDescriptor.ReplaceReference( _
+                        encontrado)
+
+                Catch exReplace As Exception
+
+                    falhas += 1
+
+                    relatorio.Add( _
+                        "FALHA NA SUBSTITUICAO: " & nomeAntigo & _
+                        " -> " & encontrado & _
+                        " | " & exReplace.Message)
+
+                    Continue For
+
+                End Try
+
+                If Not dd.ReferenceMissing Then
+
+                    resolvidas += 1
+
+                    relatorio.Add( _
+                        "RECUPERADA: " & nomeAntigo & _
+                        " -> " & encontrado)
+
+                Else
+
+                    falhas += 1
+
+                    relatorio.Add( _
+                        "AINDA PENDENTE: " & nomeAntigo & _
+                        " -> " & encontrado)
+
+                End If
+
+            Catch ex As Exception
+
+                falhas += 1
+
+                relatorio.Add( _
+                    "ERRO: " & nomeAntigo & _
+                    " | " & ex.Message)
+
+            End Try
+
+        End If
+
+        ' Se a referencia estiver resolvida, percorrer IAM
+        Try
+
+            If Not dd.ReferenceMissing Then
+
+                Dim docRef As Document = dd.ReferencedDocument
+
+                If docRef IsNot Nothing Then
+
+                    If docRef.DocumentType = _
+                        DocumentTypeEnum.kAssemblyDocumentObject Then
+
+                        ProcessarDocumento( _
+                            docRef, workspace, visitados, relatorio, _
+                            resolvidas, naoEncontradas, ambiguas, _
+                            falhas, examinadas)
+
+                    End If
+
+                End If
+
+            End If
+
+        Catch ex As Exception
+
+            relatorio.Add( _
+                "ERRO AO PERCORRER REFERENCIA: " & _
+                nomeAntigo & " | " & ex.Message)
+
+        End Try
+
+    Next
+
+End Sub
+
+
+' ============================================================
+' LOCALIZAR ARQUIVO NO WORKSPACE
+'
+' PRIMEIRO: DesignProjectManager.ResolveFile
+' SEGUNDO: Pesquisa recursiva no Workspace
+' SOMENTE NOME E EXTENSAO EXATOS
+' ============================================================
+
+Function LocalizarArquivo( _
+    documentoPai As Document, _
+    caminhoAntigo As String, _
+    workspace As String, _
+    ByRef motivo As String) As String
+
+    motivo = ""
+
+    Dim nomeArquivo As String = ""
+
+    Try
+        nomeArquivo = Path.GetFileName(caminhoAntigo)
+    Catch
+        Return ""
+    End Try
+
+    If nomeArquivo = "" Then Return ""
+
+    ' Primeiro tentar o resolvedor nativo do Inventor
+    Try
+
+        Dim origem As String = Path.GetDirectoryName( _
+            documentoPai.FullFileName)
+
+        Dim resultado As String = _
+            ThisApplication.DesignProjectManager.ResolveFile( _
+                origem, nomeArquivo, Nothing)
+
+        If resultado <> "" AndAlso File.Exists(resultado) Then
+
+            If String.Equals( _
+                Path.GetFileName(resultado), _
+                nomeArquivo, _
+                StringComparison.OrdinalIgnoreCase) Then
+
+                Return resultado
+
+            End If
+
+        End If
+
+    Catch
+    End Try
+
+    ' Segundo: procurar no Workspace e subpastas
+    Dim encontrados As New List(Of String)
+
+    Try
+
+        Dim arquivos() As String = Directory.GetFiles( _
+            workspace, nomeArquivo, SearchOption.AllDirectories)
+
+        For Each arq As String In arquivos
+
+            If String.Equals( _
+                Path.GetFileName(arq), _
+                nomeArquivo, _
+                StringComparison.OrdinalIgnoreCase) Then
+
+                encontrados.Add(arq)
+
+            End If
+
+        Next
+
+    Catch ex As Exception
+
+        motivo = "ERRO NA PESQUISA: " & ex.Message
+        Return ""
+
+    End Try
+
+    If encontrados.Count = 1 Then
+        Return encontrados(0)
+    End If
+
+    If encontrados.Count > 1 Then
+        motivo = "AMBIGUA"
+        Return ""
+    End If
+
+    motivo = "NAO ENCONTRADA"
+    Return ""
+
+End Function
